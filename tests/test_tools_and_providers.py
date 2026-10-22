@@ -101,3 +101,10 @@ def test_read_webpage_blocks_local_addresses(url):
 async def test_open_url_rejects_non_http(store):
     ok, out = await registry.call("open_url", {"url": "file:///etc/passwd"}, ToolContext(store=store))
     assert not ok and out.startswith("ERROR")
+
+
+def test_turn_context_gives_both_calendar_years():
+    from april.agent.prompts import turn_context
+
+    ctx = turn_context(datetime(2026, 10, 22, 9, 0, tzinfo=tz()))
+    assert "พ.ศ. 2569" in ctx and "ค.ศ. 2026" in ctx

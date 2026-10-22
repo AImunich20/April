@@ -1,7 +1,8 @@
 // AprilApp.swift — แอป macOS ของ April
 //
 // หน้าต่างของแอปมีหน้าเดียว = ศูนย์ควบคุม (ControlCenter.swift — แบบเดียวกับหน้า "ระบบ" ของ Envy) ไม่มีหน้าเว็บ
-// การใช้งาน April = เรียกแบบ Siri: คีย์ลัด (ค่าเริ่มต้น ⌥Space) หรือพูดว่า "April" -> แผงลอยมุมขวาบน (SiriPanel.swift)
+// การใช้งาน April = เรียกแบบ Siri: คีย์ลัด (ค่าเริ่มต้น ⌥Space) หรือพูดว่า "April" -> Dynamic Island ที่รอยบากจอ (Island.swift)
+// ธีมเหลือง-ดำ บังคับโหมดมืดเสมอ
 // เปิดแอป -> ติดตั้ง (ครั้งแรก) -> เปิด Ollama + เซิร์ฟเวอร์ April เบื้องหลัง · ไอคอนบน menu bar อยู่ตลอด
 // ⌘Q = ปิดแอป (April ยังรันเบื้องหลัง: ตัวเตือน/สรุปประจำวันยังทำงาน) · ⌥⌘Q = หยุด April แล้วออก
 // build: Apple/build.sh · ออกรุ่น: Apple/release.sh
@@ -37,6 +38,7 @@ final class AppState {
     func launch() {
         guard !started else { return }
         started = true
+        NSApp.appearance = NSAppearance(named: .darkAqua)
         hotkey.register()
         Task { await backend.monitor() }
         Task { await backend.boot() }
@@ -51,7 +53,10 @@ final class AppState {
             openControlCenter()
             return
         }
-        SiriPanel.summon(self)
+        Island.summon(self)
+        // โหลดโมเดลในเครื่องขึ้น RAM ระหว่างที่ผู้ใช้พูด — คำตอบแรกไม่ต้องรอโหลด (~20 วิ)
+        let api = backend.api
+        Task { try? await api.call("POST", "api/models/warm", timeout: 5) }
     }
 
     func openControlCenter() {
@@ -74,6 +79,9 @@ final class AppState {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if APRIL_PREVIEW
+        MainActor.assumeIsolated { renderPreviews() }
+        #endif
         MainActor.assumeIsolated { AppState.shared.launch() }
     }
 
@@ -89,6 +97,7 @@ struct AprilApp: App {
     var body: some Scene {
         Window("April", id: "main") {
             RootView()
+                .preferredColorScheme(.dark)
                 .environment(app)
                 .environment(app.talk)
                 .environment(app.wake)

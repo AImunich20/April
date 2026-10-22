@@ -2,9 +2,9 @@
 //   ฟัง:  ไมค์ (AVAudioEngine) จับเงียบเองว่าพูดจบ -> ถอดเสียงไทยด้วย Apple Speech (บนเครื่องถ้าเครื่องรองรับ)
 //   คิด:  POST /chat (voice=true -> April ตอบสั้นแบบภาษาพูด) บทสนทนา "voice-…" ความจำเดียวกับทุกช่องทาง
 //   พูด:  AVSpeechSynthesizer เสียงไทย อ่านทีละท่อนระหว่าง stream
-//   แบบ Siri: เรียก (⌥Space / "April") -> ฟังทันที -> ตอบ -> รอฟังคำถามต่อ 5 วิ -> เงียบ = จบ (SiriPanel ซ่อนตัวเอง)
+//   แบบ Siri: เรียก (⌥Space / "April") -> ฟังทันที -> ตอบ -> รอฟังคำถามต่อ 5 วิ -> เงียบ = จบ (เกาะหดกลับเข้ารอยบาก)
 //   ไม่ได้เรียกเกิน 5 นาที = เริ่มบทสนทนาใหม่ · แตะลูกแก้วระหว่างพูด = พูดแทรก · Esc = หยุด
-// หน้าตาอยู่ที่ SiriPanel.swift
+// หน้าตาอยู่ที่ Island.swift
 
 import AVFoundation
 import Speech
@@ -63,6 +63,16 @@ final class TalkModel: NSObject, AVSpeechSynthesizerDelegate {
     @ObservationIgnored private(set) var level: Float = 0
     @ObservationIgnored private(set) var levels = [Float](repeating: 0, count: 48)
     @ObservationIgnored private(set) var pulseAt = 0.0
+
+    #if APRIL_PREVIEW
+    /// เฉพาะ build พรีวิว (Apple/tests/render-previews.sh): ตั้งสถานะเพื่อวาดภาพแต่ละแบบ
+    func previewSet(_ s: TalkState, level: Float, pulse: Bool) {
+        state = s
+        self.level = level
+        levels = (0..<48).map { i in Float(0.15 + 0.6 * abs(sin(Double(i) * 0.37))) * (s == .listening ? 1 : 0) }
+        if pulse { pulseAt = Date.now.timeIntervalSinceReferenceDate }
+    }
+    #endif
 
     /// เรียกเมื่อเลิกคุย (ไมค์ว่าง) — WakeWord กลับไปรอฟังคำว่า "April"
     @ObservationIgnored var onIdleMic: (() -> Void)?
@@ -261,7 +271,7 @@ final class TalkModel: NSObject, AVSpeechSynthesizerDelegate {
         setState(.hearing)
         Task {
             do {
-                let text = try await AppleSTT.transcribe(m.url)
+                let text = WakePhrase.strip(try await AppleSTT.transcribe(m.url))   // ตัด "ฮัลโหล April" ที่ขึ้นต้น
                 guard !text.isEmpty else {
                     caption = ""
                     setState(.idle, "ไม่ได้ยินเสียงพูด ลองอีกครั้งครับ")

@@ -1,6 +1,6 @@
 // ControlCenter.swift — หน้าต่างหลักของแอป = ศูนย์ควบคุม (โครงและหน้าตาเดียวกับหน้า "ระบบ" ของ Envy)
 //   ภาพรวม · RAM · งาน · ตั้งเวลา · โมเดล · Log · ความจำ · คาแรคเตอร์ · เครื่องมือ · เสียง · การเชื่อมต่อ · อัปเดต
-// การใช้งาน April จริงไม่ได้อยู่ที่นี่ — เรียกแบบ Siri (⌥Space / "April") ดู SiriPanel.swift
+// การใช้งาน April จริงไม่ได้อยู่ที่นี่ — เรียกแบบ Dynamic Island (⌥Space / "April") ดู Island.swift
 // ข้อมูลมาจาก /api/* ของเซิร์ฟเวอร์ (april/control_api.py) · ค่าตั้งเขียนลง .env แล้วเริ่มเซิร์ฟเวอร์ใหม่
 
 import AppKit
@@ -24,7 +24,9 @@ enum Fmt {
     }
     static func ago(_ ts: Double?) -> String {
         guard let ts, ts > 0 else { return "–" }
-        return RelativeDateTimeFormatter().localizedString(for: Date(timeIntervalSince1970: ts), relativeTo: Date())
+        let f = RelativeDateTimeFormatter()
+        f.locale = Locale(identifier: "th_TH")
+        return f.localizedString(for: Date(timeIntervalSince1970: ts), relativeTo: Date())
     }
     static func clock(_ ts: Double?) -> String {
         guard let ts else { return "" }
@@ -286,7 +288,7 @@ struct SystemView: View {
                 if model.busy { ProgressView().controlSize(.small).padding(.leading, 6) }
                 Spacer()
                 Button { app.summon() } label: { Label("เรียก April  \(app.hotkey.choice.label)", systemImage: "waveform.circle") }
-                    .buttonStyle(MintButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                 Button { Task { await app.backend.restart() } } label: { Label("เริ่ม April ใหม่", systemImage: "arrow.clockwise") }
                     .buttonStyle(QuietButtonStyle())
                 Button { app.openLogs() } label: { Label("ไฟล์ log", systemImage: "doc.text") }
@@ -294,15 +296,16 @@ struct SystemView: View {
             }
             .padding(.horizontal, 28).padding(.top, 18)
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            HScroll {
                 HStack(spacing: 6) {
                     ForEach(SysTab.allCases) { t in
                         Button { model.tab = t } label: {
                             Label(t.rawValue, systemImage: t.icon)
+                                .lineLimit(1).fixedSize()
                                 .font(.system(size: 12.5, weight: model.tab == t ? .semibold : .regular))
-                                .foregroundStyle(model.tab == t ? Theme.mint : Theme.muted)
+                                .foregroundStyle(model.tab == t ? Theme.accent : Theme.muted)
                                 .padding(.horizontal, 11).padding(.vertical, 6)
-                                .background(model.tab == t ? Theme.mintSoft : .clear, in: Capsule())
+                                .background(model.tab == t ? Theme.accentSoft : .clear, in: Capsule())
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -317,7 +320,7 @@ struct SystemView: View {
             }
             if let s = model.saved {
                 HStack {
-                    Label(s, systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(Theme.mint)
+                    Label(s, systemImage: "checkmark.circle.fill").font(.callout).foregroundStyle(Theme.accent)
                     Button { model.saved = nil } label: { Image(systemName: "xmark") }.buttonStyle(.borderless).foregroundStyle(Theme.muted)
                 }
                 .padding(.horizontal, 28).padding(.bottom, 8)
@@ -353,12 +356,30 @@ struct SystemView: View {
 struct TabScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) { content }
-                .padding(.horizontal, 28).padding(.bottom, 28)
-                .frame(maxWidth: 1100, alignment: .leading)
-                .frame(maxWidth: .infinity)
-        }
+        #if APRIL_PREVIEW
+        inner   // ImageRenderer วาดเนื้อหาใน ScrollView ไม่ได้
+        #else
+        ScrollView { inner }
+        #endif
+    }
+
+    private var inner: some View {
+        VStack(alignment: .leading, spacing: 14) { content }
+            .padding(.horizontal, 28).padding(.bottom, 28)
+            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+/// แถบแท็บเลื่อนแนวนอน (build พรีวิวไม่ใช้ ScrollView — ImageRenderer วาดไม่ได้)
+struct HScroll<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        #if APRIL_PREVIEW
+        content
+        #else
+        ScrollView(.horizontal, showsIndicators: false) { content }
+        #endif
     }
 }
 
@@ -372,7 +393,8 @@ struct Stat: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label).font(.system(size: 11.5)).foregroundStyle(Theme.muted)
             Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).foregroundStyle(tone).monospacedDigit()
-            if let note { Text(note).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1) }
+            // ไม่มีบรรทัดย่อยก็เว้นที่ไว้ — การ์ดในแถวเดียวกันสูงเท่ากัน
+            Text(note ?? " ").font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -395,7 +417,7 @@ struct KV: View {
 
 func statusColor(_ s: String?) -> Color {
     switch s ?? "" {
-    case "done", "ok", "loaded", "running", "online": Theme.mint
+    case "done", "ok", "loaded", "running", "online": Theme.accent
     case "failed", "error", "cancelled": Theme.danger
     case "queued", "unknown", "starting", "paused": Theme.warn
     default: Theme.muted
@@ -421,7 +443,7 @@ struct BootView: View {
             case .failed(let why):
                 Text("เปิด April ไม่สำเร็จ").font(Theme.serif(24)).foregroundStyle(Theme.ink)
                 Text(why).font(.system(size: 13)).foregroundStyle(Theme.muted).multilineTextAlignment(.center).frame(maxWidth: 460)
-                Button("ลองใหม่") { Task { await app.backend.boot() } }.buttonStyle(MintButtonStyle()).keyboardShortcut(.defaultAction)
+                Button("ลองใหม่") { Task { await app.backend.boot() } }.buttonStyle(AccentButtonStyle()).keyboardShortcut(.defaultAction)
             case .ready:
                 EmptyView()
             }
@@ -439,7 +461,7 @@ struct InstallSteps: View {
             ForEach(Installer.Step.allCases) { s in
                 HStack(spacing: 10) {
                     Group {
-                        if installer.done.contains(s) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.mint) }
+                        if installer.done.contains(s) { Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent) }
                         else if installer.step == s { ProgressView().controlSize(.small) }
                         else { Image(systemName: "circle").foregroundStyle(Theme.line) }
                     }
@@ -447,7 +469,7 @@ struct InstallSteps: View {
                     Text(s.title).font(.system(size: 13)).foregroundStyle(installer.step == s ? Theme.ink : Theme.muted)
                 }
             }
-            if let p = installer.progress { ProgressView(value: p).tint(Theme.mint) }
+            if let p = installer.progress { ProgressView(value: p).tint(Theme.accent) }
             Text(installer.detail).font(.system(size: 11.5)).foregroundStyle(Theme.muted).lineLimit(2)
             Text("ครั้งแรกต้องต่อเน็ต ใช้เวลา 5–20 นาที (โมเดลในเครื่อง ~3 GB)").font(.system(size: 11)).foregroundStyle(Theme.muted)
         }

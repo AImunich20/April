@@ -48,7 +48,8 @@ def system_prompt(notes: list[dict]) -> str:
 
 def turn_context(now: datetime | None = None) -> str:
     now = now or datetime.now(tz())
-    return f"\n\n[บริบท: ตอนนี้{thai_datetime(now)} ({now.isoformat(timespec='minutes')})]"
+    return (f"\n\n[บริบท: ตอนนี้{thai_datetime(now)} — ปี พ.ศ. {now.year + 543} = ค.ศ. {now.year} "
+            f"({now.isoformat(timespec='minutes')})]")
 
 
 VOICE_STYLE = ("\n[คุยด้วยเสียง: คำตอบนี้จะถูกอ่านออกเสียง ตอบสั้น 1-3 ประโยค ห้ามใช้ตาราง หัวข้อ bullet ตัวหนา อีโมจิ "

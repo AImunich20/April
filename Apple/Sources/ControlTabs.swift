@@ -17,7 +17,7 @@ struct OverviewTab: View {
         let ollama = o.obj("ollama"), cloud = o.obj("cloud")
         TabScroll {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 12)], spacing: 12) {
-                Stat(label: "งานที่กำลังทำ", value: Fmt.count(o.num("active_runs")), tone: Theme.mint)
+                Stat(label: "งานที่กำลังทำ", value: Fmt.count(o.num("active_runs")), tone: Theme.accent)
                 Stat(label: "งาน 24 ชม.", value: Fmt.count(done + failed + cancelled),
                      note: "สำเร็จ \(Int(done)) · ล้ม \(Int(failed)) · เฉลี่ย \(Fmt.seconds(r24.obj("done").num("avg_seconds")))")
                 Stat(label: "เรียกโมเดล", value: Fmt.count(o.num("llm_calls")), note: "error \(Fmt.count(o.num("llm_errors")))")
@@ -34,8 +34,8 @@ struct OverviewTab: View {
                     KV(k: "ติดตั้งไว้", v: "\(Fmt.count(ollama.num("installed"))) โมเดล")
                     KV(k: "โหลดค้างใน RAM", v: ollama.strs("loaded").isEmpty ? "–" : ollama.strs("loaded").joined(separator: ", "))
                 }
-                Card(title: "เรียก April แบบ Siri", trailing: AnyView(
-                    Button { app.summon() } label: { Label("เรียกตอนนี้", systemImage: "waveform.circle") }.buttonStyle(MintButtonStyle()))) {
+                Card(title: "เรียก April (Dynamic Island)", trailing: AnyView(
+                    Button { app.summon() } label: { Label("เรียกตอนนี้", systemImage: "waveform.circle") }.buttonStyle(AccentButtonStyle()))) {
                     KV(k: "คีย์ลัด", v: app.hotkey.choice.label)
                     KV(k: "เรียกด้วยเสียง", v: app.wake.enabled ? (app.wake.listening ? "รอฟัง \"April\"" : "พัก") : "ปิด (เปิดในแท็บเสียง)")
                     KV(k: "โมเดลที่ใช้ตอบ", v: cloud.str("default") ?? "auto")
@@ -46,7 +46,7 @@ struct OverviewTab: View {
                     Text("auto").font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Theme.muted).frame(width: 100, alignment: .leading)
                     ForEach(Array(cloud.strs("chain").enumerated()), id: \.offset) { i, m in
                         if i > 0 { Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(Theme.muted) }
-                        Pill(text: m, color: i == 0 ? Theme.mint : Theme.muted)
+                        Pill(text: m, color: i == 0 ? Theme.accent : Theme.muted)
                     }
                     Spacer(minLength: 0)
                 }
@@ -61,7 +61,7 @@ struct OverviewTab: View {
                 ForEach(Array(o.arr("announcements").enumerated()), id: \.offset) { i, a in
                     if i > 0 { Divider().overlay(Theme.line) }
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: a.str("kind") == "briefing" ? "sun.max" : "alarm").foregroundStyle(Theme.mint).padding(.top, 2)
+                        Image(systemName: a.str("kind") == "briefing" ? "sun.max" : "alarm").foregroundStyle(Theme.accent).padding(.top, 2)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(a.str("title") ?? "").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink)
                             Text(markdown(a.str("text") ?? "")).font(.system(size: 12.5)).foregroundStyle(Theme.ink).textSelection(.enabled)
@@ -94,15 +94,15 @@ struct RAMTab: View {
                     Spacer()
                     if let free = mem.num("free_percent") {
                         Pill(text: "ว่าง \(Int(free))% · แรงกดดัน\(mem.str("pressure") ?? "")",
-                             color: free < 10 ? Theme.danger : free < 25 ? Theme.warn : Theme.mint)
+                             color: free < 10 ? Theme.danger : free < 25 ? Theme.warn : Theme.accent)
                     }
                 }
                 GeometryReader { g in
                     let w = g.size.width
                     let seg = { (v: Double) in total > 0 ? max(0, CGFloat(v / total) * w) : 0 }
                     HStack(spacing: 2) {
-                        Rectangle().fill(Theme.mint).frame(width: seg(modelsBytes))
-                        Rectangle().fill(Theme.mint.opacity(0.45)).frame(width: seg(aprilBytes))
+                        Rectangle().fill(Theme.accent).frame(width: seg(modelsBytes))
+                        Rectangle().fill(Theme.accent.opacity(0.45)).frame(width: seg(aprilBytes))
                         Rectangle().fill(Theme.muted.opacity(0.45)).frame(width: seg(max(0, used - modelsBytes - aprilBytes)))
                         Rectangle().fill(Theme.line)
                     }
@@ -110,8 +110,8 @@ struct RAMTab: View {
                 }
                 .frame(height: 12)
                 HStack(spacing: 14) {
-                    legend(Theme.mint, "โมเดล AI \(Fmt.bytes(modelsBytes))")
-                    legend(Theme.mint.opacity(0.45), "April \(Fmt.bytes(aprilBytes))")
+                    legend(Theme.accent, "โมเดล AI \(Fmt.bytes(modelsBytes))")
+                    legend(Theme.accent.opacity(0.45), "April \(Fmt.bytes(aprilBytes))")
                     legend(Theme.muted.opacity(0.45), "แอปอื่น")
                     legend(Theme.line, "ว่าง")
                 }
@@ -119,12 +119,12 @@ struct RAMTab: View {
 
             Card(title: "เคลียร์ RAM", trailing: AnyView(
                 Button { model.clearRAM() } label: { Label("เคลียร์ RAM ตอนนี้", systemImage: "wind") }
-                    .buttonStyle(MintButtonStyle()).disabled(model.busy)
+                    .buttonStyle(AccentButtonStyle()).disabled(model.busy)
             )) {
                 Text("ปลดโมเดล AI ทุกตัวออกจาก RAM — คำถามถัดไปจะโหลดโมเดลใหม่ (ช้าขึ้นครั้งแรก 5–20 วิ) ข้อมูล ความจำ และบทสนทนาไม่หาย")
                     .font(.system(size: 12)).foregroundStyle(Theme.muted)
                 if let r = model.lastClear {
-                    Label(r, systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.mint)
+                    Label(r, systemImage: "checkmark.circle.fill").font(.system(size: 12.5)).foregroundStyle(Theme.accent)
                 }
             }
 
@@ -136,7 +136,7 @@ struct RAMTab: View {
                     if i > 0 { Divider().overlay(Theme.line) }
                     HStack(spacing: 10) {
                         Image(systemName: m.bool("embedding") == true ? "text.magnifyingglass" : "cpu")
-                            .foregroundStyle(Theme.mint).frame(width: 20)
+                            .foregroundStyle(Theme.accent).frame(width: 20)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(m.str("name") ?? "").font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.ink)
                             Text(RAMTab.expiry(m.str("expires_at"))).font(.system(size: 11)).foregroundStyle(Theme.muted)
@@ -202,7 +202,7 @@ struct TasksTab: View {
                             .padding(.top, 5)
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 6) {
-                                if t.num("voice") == 1 { Image(systemName: "waveform").font(.system(size: 11)).foregroundStyle(Theme.mint) }
+                                if t.num("voice") == 1 { Image(systemName: "waveform").font(.system(size: 11)).foregroundStyle(Theme.accent) }
                                 Text(t.str("message") ?? "").font(.system(size: 13)).foregroundStyle(Theme.ink).lineLimit(2)
                             }
                             HStack(spacing: 6) {
@@ -210,7 +210,7 @@ struct TasksTab: View {
                                 Text("\(Fmt.seconds(t.num("duration_seconds"))) · \(Fmt.ago(t.num("started")))")
                                     .font(.system(size: 11)).foregroundStyle(Theme.muted)
                                 if let m = t.str("model") { Pill(text: m) }
-                                ForEach(Array(t.strs("tools").enumerated()), id: \.offset) { _, name in Pill(text: name, color: Theme.mint) }
+                                ForEach(Array(t.strs("tools").enumerated()), id: \.offset) { _, name in Pill(text: name, color: Theme.accent) }
                             }
                             if let a = t.str("answer"), !a.isEmpty {
                                 Text(a).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(2).textSelection(.enabled)
@@ -250,13 +250,13 @@ struct ScheduledTab: View {
                 ForEach(Array(model.reminders.enumerated()), id: \.offset) { _, r in
                     let pending = r.num("done") == 0
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "alarm").foregroundStyle(Theme.mint).padding(.top, 2)
+                        Image(systemName: "alarm").foregroundStyle(Theme.accent).padding(.top, 2)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(r.str("text") ?? "").font(.system(size: 13)).foregroundStyle(Theme.ink)
                             HStack(spacing: 8) {
                                 Text(Date(timeIntervalSince1970: r.num("due_at") ?? 0),
                                      format: .dateTime.weekday().day().month().year().hour().minute())
-                                Pill(text: pending ? "รอแจ้ง" : "แจ้งแล้ว/ยกเลิก", color: pending ? Theme.mint : Theme.muted)
+                                Pill(text: pending ? "รอแจ้ง" : "แจ้งแล้ว/ยกเลิก", color: pending ? Theme.accent : Theme.muted)
                             }
                             .font(.system(size: 11.5)).foregroundStyle(Theme.muted)
                         }
@@ -281,7 +281,7 @@ struct ScheduledTab: View {
                         }
                         model.saveEnv(["APRIL_BRIEFING_TIME": briefing])
                     }
-                    .buttonStyle(MintButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                     Spacer()
                     if let next = model.config.num("next_briefing") {
                         Text("ครั้งถัดไป \(Date(timeIntervalSince1970: next).formatted(date: .abbreviated, time: .shortened))")
@@ -316,7 +316,7 @@ struct ModelsTab: View {
                         }
                     }
                     .frame(maxWidth: 520)
-                    Button("บันทึก") { model.saveEnv(["APRIL_DEFAULT_MODEL": defaultModel]) }.buttonStyle(MintButtonStyle())
+                    Button("บันทึก") { model.saveEnv(["APRIL_DEFAULT_MODEL": defaultModel]) }.buttonStyle(AccentButtonStyle())
                 }
                 Text("ลำดับ auto: \(m.strs("auto_order").joined(separator: " → ")) → โมเดลในเครื่อง")
                     .font(.system(size: 11.5)).foregroundStyle(Theme.muted)
@@ -332,7 +332,7 @@ struct ModelsTab: View {
                     }
                     Spacer()
                     Pill(text: local.bool("loaded") == true ? "อยู่ใน RAM" : local.bool("installed") == true ? "ติดตั้งแล้ว" : "ยังไม่ได้ติดตั้ง",
-                         color: local.bool("installed") == true ? Theme.mint : Theme.danger)
+                         color: local.bool("installed") == true ? Theme.accent : Theme.danger)
                     if let st = local["stats"] as? JSON {
                         Text("เรียก \(Fmt.count(st.num("calls"))) · เฉลี่ย \(Fmt.seconds(st.num("avg_seconds")))")
                             .font(.system(size: 11)).foregroundStyle(Theme.muted).monospacedDigit()
@@ -450,7 +450,7 @@ struct CloudKeysCard: View {
                     model.saveEnv(changed.mapValues { $0.trimmingCharacters(in: .whitespaces) })
                     values = values.filter { k, _ in !(Self.fields.first { $0.0 == k }?.2 ?? false) }
                 }
-                .buttonStyle(MintButtonStyle())
+                .buttonStyle(AccentButtonStyle())
             }
         }
         .onAppear {
@@ -510,7 +510,7 @@ struct LogsTab: View {
     }
 
     func levelColor(_ l: String?) -> Color {
-        switch l { case "error": Theme.danger; case "warning": Theme.warn; default: Theme.mint }
+        switch l { case "error": Theme.danger; case "warning": Theme.warn; default: Theme.accent }
     }
 }
 
@@ -531,7 +531,7 @@ struct MemoryTab: View {
                 HStack {
                     TextField("เช่น บอสแพ้กุ้ง · ประชุมทีมทุกวันจันทร์ 10 โมง", text: $newNote).textFieldStyle(.roundedBorder)
                         .onSubmit(add)
-                    Button("จด", action: add).buttonStyle(MintButtonStyle()).disabled(newNote.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("จด", action: add).buttonStyle(AccentButtonStyle()).disabled(newNote.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             Card(title: "ความจำเรื่องเจ้านาย (\(shown.count))") {
@@ -539,7 +539,7 @@ struct MemoryTab: View {
                 ForEach(Array(shown.enumerated()), id: \.offset) { i, n in
                     if i > 0 { Divider().overlay(Theme.line) }
                     HStack(alignment: .top, spacing: 10) {
-                        Pill(text: "#\(n.str("id") ?? "")", color: Theme.mint)
+                        Pill(text: "#\(n.str("id") ?? "")", color: Theme.accent)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(n.str("text") ?? "").font(.system(size: 13)).foregroundStyle(Theme.ink).textSelection(.enabled)
                             Text(Fmt.ago(n.num("created"))).font(.system(size: 11)).foregroundStyle(Theme.muted)
@@ -603,7 +603,7 @@ struct PersonaTab: View {
                         v["APRIL_CHECKLIST_ENABLED"] = checklist ? "true" : "false"
                         model.saveEnv(v)
                     }
-                    .buttonStyle(MintButtonStyle())
+                    .buttonStyle(AccentButtonStyle())
                 }
             }
             Card(title: "System prompt ที่ใช้จริง", trailing: AnyView(
@@ -669,7 +669,7 @@ struct ToolsTab: View {
                                     }
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(8)
-                                    .background(picked == name ? Theme.mintSoft : .clear, in: RoundedRectangle(cornerRadius: 8))
+                                    .background(picked == name ? Theme.accentSoft : .clear, in: RoundedRectangle(cornerRadius: 8))
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
@@ -694,10 +694,10 @@ struct ToolsTab: View {
                                     .textFieldStyle(.roundedBorder).font(.system(size: 12))
                             }
                         }
-                        Button("รัน") { model.runTool(tool.str("name") ?? "", typed(props)) }.buttonStyle(MintButtonStyle())
+                        Button("รัน") { model.runTool(tool.str("name") ?? "", typed(props)) }.buttonStyle(AccentButtonStyle())
                         if let r = model.toolResult {
                             HStack {
-                                Pill(text: r.bool("ok") == true ? "สำเร็จ" : "ผิดพลาด", color: r.bool("ok") == true ? Theme.mint : Theme.danger)
+                                Pill(text: r.bool("ok") == true ? "สำเร็จ" : "ผิดพลาด", color: r.bool("ok") == true ? Theme.accent : Theme.danger)
                                 Text(String(format: "%.3f วิ", r.num("seconds") ?? 0)).font(.system(size: 11)).foregroundStyle(Theme.muted)
                             }
                             Text(r.str("result") ?? "").font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
@@ -752,8 +752,8 @@ struct VoiceTab: View {
         let voices = TalkModel.thaiVoices
         TabScroll {
             Card(title: "เรียก April แบบ Siri", trailing: AnyView(
-                Button { app.summon() } label: { Label("ลองเรียก", systemImage: "waveform.circle") }.buttonStyle(MintButtonStyle()))) {
-                Text("กดคีย์ลัด หรือพูดว่า “April” — หน้าต่างเล็กมุมขวาบนจะฟังคำสั่ง ตอบด้วยเสียง รอฟังคำถามต่อสั้นๆ แล้วหายไปเอง")
+                Button { app.summon() } label: { Label("ลองเรียก", systemImage: "waveform.circle") }.buttonStyle(AccentButtonStyle()))) {
+                Text("กดคีย์ลัด หรือพูดว่า “April” — พื้นที่ดำจะขยายออกจากรอยบากจอแบบ Dynamic Island ฟังคำสั่ง ตอบด้วยเสียง รอฟังคำถามต่อสั้นๆ แล้วหดกลับเอง (ไม่มีตัวอักษร — คำตอบเต็มดูได้ในแท็บงาน)")
                     .font(.system(size: 12)).foregroundStyle(Theme.muted)
                 Picker("คีย์ลัด", selection: $hotkey.choice) {
                     ForEach(HotKeyChoice.allCases) { Text($0.label).tag($0) }
@@ -798,8 +798,6 @@ struct VoiceTab: View {
                     }
                     .buttonStyle(QuietButtonStyle())
                 }
-                Toggle("อ่านคำตอบออกเสียงเมื่อพิมพ์ถามด้วย", isOn: $talk.speakTyped).toggleStyle(.switch).controlSize(.small)
-                Toggle("คำบรรยายสดระหว่างพูด", isOn: $talk.liveCaptions).toggleStyle(.switch).controlSize(.small)
                 Toggle("พูดแทรกด้วยเสียงได้ (ใส่หูฟังจะแม่นที่สุด)", isOn: $talk.bargeIn).toggleStyle(.switch).controlSize(.small)
             }
             Card(title: "สิทธิ์ของแอป") {
@@ -862,7 +860,7 @@ struct ConnectionsTab: View {
                         if host == "0.0.0.0" && c.bool("api_token_set") != true { v["APRIL_API_TOKEN"] = Self.newToken() }
                         model.saveEnv(v)
                     }
-                    .buttonStyle(MintButtonStyle()).disabled(host == (c.str("host") ?? "127.0.0.1"))
+                    .buttonStyle(AccentButtonStyle()).disabled(host == (c.str("host") ?? "127.0.0.1"))
                     Button("ออก token ใหม่") { model.saveEnv(["APRIL_API_TOKEN": Self.newToken()], note: "ออก token ใหม่แล้ว — คัดลอกได้ด้านล่าง") }
                         .buttonStyle(QuietButtonStyle())
                     if c.bool("api_token_set") == true {
@@ -928,10 +926,10 @@ struct UpdateTab: View {
                          .buttonStyle(QuietButtonStyle()).disabled(updater.working)
                      if let n = updater.newest {
                          Button { confirm = n } label: { Label("อัปเดตเลย", systemImage: "arrow.down.circle") }
-                             .buttonStyle(MintButtonStyle()).disabled(updater.working)
+                             .buttonStyle(AccentButtonStyle()).disabled(updater.working)
                      }
                  })) {
-                if updater.working { ProgressView(value: updater.progress ?? 0).tint(Theme.mint) }
+                if updater.working { ProgressView(value: updater.progress ?? 0).tint(Theme.accent) }
                 if let m = updater.message { Text(m).font(.system(size: 12)).foregroundStyle(Theme.muted) }
                 Picker("อัปเดตอัตโนมัติ", selection: $updater.mode) {
                     ForEach(AutoUpdateMode.allCases) { Text($0.label).tag($0) }
@@ -988,16 +986,16 @@ struct ReleaseRow: View {
                 }
                 .buttonStyle(.plain)
                 Text(release.version).font(.system(size: 13, weight: current ? .semibold : .regular, design: .monospaced)).foregroundStyle(Theme.ink)
-                if current { Pill(text: "ใช้อยู่", color: Theme.mint) }
+                if current { Pill(text: "ใช้อยู่", color: Theme.accent) }
                 if release.prerelease { Pill(text: "beta", color: Theme.warn) }
                 if skipped { Pill(text: "ข้ามแล้ว") }
-                if newer, !skipped, UpdatePolicy.isPatch(release.version, of: updater.version) { Pill(text: "แพตช์", color: Theme.mint) }
+                if newer, !skipped, UpdatePolicy.isPatch(release.version, of: updater.version) { Pill(text: "แพตช์", color: Theme.accent) }
                 if let d = release.date { Text(d.formatted(date: .abbreviated, time: .omitted)).font(.system(size: 11)).foregroundStyle(Theme.muted) }
                 Spacer()
                 if !current {
                     if newer && !skipped { Button("ข้าม") { updater.skip(release) }.buttonStyle(.borderless).font(.system(size: 12)) }
                     Button(newer ? "อัปเดต" : "ย้อนกลับ") { confirm = release }
-                        .buttonStyle(newer ? AnyButtonStyle(MintButtonStyle()) : AnyButtonStyle(QuietButtonStyle()))
+                        .buttonStyle(newer ? AnyButtonStyle(AccentButtonStyle()) : AnyButtonStyle(QuietButtonStyle()))
                         .disabled(updater.working || release.zip == nil)
                 }
             }

@@ -24,10 +24,6 @@ final class WakeWord {
 
     @ObservationIgnored var onWake: (() -> Void)?
 
-    // เสียง "April" ที่ตัวถอดเสียงไทยมักเขียนออกมา (ตัดช่องว่างแล้ว ตัวพิมพ์เล็ก)
-    static let phrases = ["april", "เอพริล", "เอพริว", "เอพิล", "เอพริ้ล", "เอพรีล", "เอพิว", "เอบริล", "เอปริล", "เอเพริล",
-                          "เอพริลล์", "เอพิ้ล", "เอพรีว"]
-
     private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "th-TH"))
     private var engine: AVAudioEngine?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -38,11 +34,6 @@ final class WakeWord {
 
     init() {
         enabled = UserDefaults.standard.bool(forKey: "AprilWakeWord")
-    }
-
-    static func matches(_ text: String) -> Bool {
-        let t = text.lowercased().replacingOccurrences(of: " ", with: "")
-        return phrases.contains { t.contains($0) }
     }
 
     func start() async {
@@ -106,7 +97,7 @@ final class WakeWord {
             let ended = error != nil || (result?.isFinal ?? false)
             Task { @MainActor in
                 guard let self, gen == self.generation, self.listening else { return }
-                if let text, WakeWord.matches(text) { self.fire(); return }
+                if let text, WakePhrase.matches(text) { self.fire(); return }
                 if ended { self.beginRound() }      // งานจบเอง (เงียบนาน/ข้อผิดพลาด) -> ฟังต่อ
             }
         }

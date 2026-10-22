@@ -121,6 +121,22 @@ def register(app: FastAPI, get_agent: Callable) -> None:
                 "unused": [{"name": n, "size": i.get("size")} for n, i in installed.items()
                            if n not in (name, f"{name}:latest")]}
 
+    @app.post("/api/models/warm")
+    async def warm():
+        """โหลดโมเดลในเครื่องขึ้น RAM ไว้ก่อน (แอปเรียกทันทีที่ผู้ใช้เรียก April) — ไม่รอให้โหลดเสร็จ"""
+        local = get_agent().router.catalog.local
+
+        async def load():
+            try:
+                import httpx
+                async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=120) as client:
+                    await client.post("/api/generate", json={"model": local.model, "keep_alive": "30m"})
+            except Exception as exc:  # noqa: BLE001 — โหลดล่วงหน้าไม่สำเร็จก็แค่ช้าลงตอนตอบ
+                observability.log("warm_failed", level="warning", model=local.model, error=str(exc))
+
+        asyncio.create_task(load())
+        return {"ok": True, "model": local.model}
+
     @app.post("/api/models/check")
     async def check_models():
         await get_agent().router.probe()

@@ -1,4 +1,4 @@
-// make-icon.swift — ไอคอนแอป April: วงแหวน HUD สีอำพันแบบ FRIDAY บนพื้นมืด (รูปเดียวกับ AprilMark ใน ChatViews.swift)
+// make-icon.swift — ไอคอนแอป April: วงแหวน HUD สีเหลืองบนพื้นดำ (ธีมเหลือง-ดำเดียวกับแอป)
 //   swift make-icon.swift out.png   (PNG 1024px — build.sh แปลงเป็น .icns)
 import AppKit
 
@@ -6,7 +6,7 @@ let size: CGFloat = 1024
 func rgb(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
     NSColor(srgbRed: CGFloat(v >> 16 & 0xff) / 255, green: CGFloat(v >> 8 & 0xff) / 255, blue: CGFloat(v & 0xff) / 255, alpha: a)
 }
-let amber = rgb(0xffb852)
+let amber = rgb(0xffd60a)
 let hot = rgb(0xffe6c2)
 
 let img = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
