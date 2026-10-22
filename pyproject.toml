@@ -1,0 +1,38 @@
+[project]
+name = "april"
+dynamic = ["version"]
+description = "April — พ่อบ้าน AI ส่วนตัวแบบ JARVIS / FRIDAY"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx",
+    "anthropic>=2.1",
+    "pydantic-settings",
+    "pyyaml",
+    "ddgs",
+    "trafilatura",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio"]
+
+[project.scripts]
+april = "april.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["april*"]
+
+[tool.setuptools.package-data]
+april = ["models.yaml"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

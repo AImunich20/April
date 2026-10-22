@@ -1,0 +1,177 @@
+"""
+april/agent/loop.py
+---------------------
+agent loop ของ April: โมเดลตัวเดียวคุมทั้งงาน เรียกเครื่องมือได้หลายรอบจนได้คำตอบ (native tool calling ทุก provider)
+
+ต่างจาก Envy ที่แตกงานเป็น DAG ของ agent เฉพาะทางหลายตัว (planner/decomposer/dispatcher/writer...) — โมเดลรุ่นใหม่
+วางแผนและเรียกเครื่องมือเองได้ดีพอแล้ว April จึงเหลือวงเดียว: โมเดล -> เครื่องมือ (ขนานกัน) -> โมเดล ... -> คำตอบ
+
+Agent.run() คืน async generator ของ event (dict) สำหรับหน้าแชท/SSE/CLI:
+  session {session_id} · model {model} · thinking {text} · token {text} · fallback {from, to, reason}
+  tool_call {id, name, arguments} · tool_result {id, name, ok, preview} · checklist {checks}
+  revision {} (คำตอบที่ส่งไปถูกแทนด้วยฉบับแก้ — token ที่ตามมาคือฉบับใหม่) · error {message}
+  done {text, model, session_id, usage}  ← event สุดท้ายเสมอ
+"""
+
+import asyncio
+from typing import AsyncIterator, Callable
+
+from april.agent import checklist
+from april.agent.prompts import BRIEFING_REQUEST, system_prompt, turn_context
+from april.config import settings
+from april.llm.router import Router
+from april.memory.store import Store
+from april.tools import builtin  # noqa: F401 — ลงทะเบียนเครื่องมือในตัว
+from april.tools.registry import ToolContext, ToolRegistry, registry as default_registry
+
+Emit = Callable[[dict], None]
+_STEP_LIMIT_NOTE = "(ระบบ) ใช้เครื่องมือครบจำนวนรอบที่กำหนดแล้ว สรุปคำตอบจากข้อมูลที่มีตอนนี้ ห้ามเรียกเครื่องมือเพิ่ม"
+
+
+class Agent:
+    def __init__(self, store: Store, router: Router | None = None, tools: ToolRegistry | None = None):
+        self.store = store
+        self.router = router or Router()
+        self.tools = tools or default_registry
+
+    async def run(self, text: str, *, session_id: str | None = None, model: str | None = None,
+                  images: list[str] | None = None) -> AsyncIterator[dict]:
+        queue: asyncio.Queue = asyncio.Queue()
+        task = asyncio.create_task(self._run_safe(text, session_id, model, images, queue.put_nowait))
+        try:
+            while (event := await queue.get()) is not None:
+                yield event
+        finally:
+            if not task.done():
+                task.cancel()
+
+    async def ask(self, text: str, **kwargs) -> dict:
+        """เหมือน run แต่รอจนจบแล้วคืน event done (ใช้กับ API แบบไม่ stream / งานเบื้องหลัง)"""
+        done: dict = {}
+        tools: list[dict] = []
+        async for event in self.run(text, **kwargs):
+            if event["type"] == "tool_result":
+                tools.append({k: event[k] for k in ("name", "ok", "preview")})
+            if event["type"] == "done":
+                done = event
+        return {**done, "tools": tools}
+
+    async def _run_safe(self, text, session_id, model, images, emit: Emit) -> None:
+        try:
+            await self._run(text, session_id, model, images, emit)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — ผู้ใช้ต้องได้ event done เสมอ ไม่ค้าง
+            emit({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
+            emit({"type": "done", "text": "", "model": None, "session_id": session_id, "usage": {}})
+        finally:
+            emit(None)
+
+    async def _generate(self, convo: list[dict], model: str | None, emit: Emit | None, use_tools: bool = True):
+        specs = self.tools.specs(settings.allow_actions) if use_tools else []
+        on_event = (lambda kind, t: emit({"type": kind, "text": t})) if emit else None
+        on_fallback = (lambda a, b, why: emit({"type": "fallback", "from": a, "to": b, "reason": why})) if emit else None
+        return await self.router.generate(convo, specs, model=model, on_event=on_event, on_fallback=on_fallback)
+
+    async def _run(self, text: str, session_id: str | None, model: str | None, images, emit: Emit) -> None:
+        sid = self.store.ensure_session(session_id, title=text.strip().splitlines()[0][:60] if text.strip() else "")
+        emit({"type": "session", "session_id": sid})
+        history = self.store.history(sid, settings.history_messages)
+
+        checks: list[str] = []
+        if settings.checklist_enabled and checklist.wanted(text):
+            raw = await self._generate([{"role": "user", "content": checklist.extract_prompt(text)}], model, None,
+                                       use_tools=False)
+            checks = checklist.parse_checks(raw.text) if raw.ok else []
+            if checks:
+                emit({"type": "checklist", "checks": checks})
+
+        content = text + (checklist.prompt_block(checks) if checks else "") + turn_context()
+        user_msg: dict = {"role": "user", "content": content, "text": text}
+        if images:
+            user_msg["images"] = images
+        convo = [{"role": "system", "content": system_prompt(self.store.notes(30))}, *history, user_msg]
+        new: list[dict] = [user_msg]
+        ctx = ToolContext(store=self.store, session_id=sid, allow_actions=settings.allow_actions)
+
+        res = None
+        usage = {"input_tokens": 0, "output_tokens": 0}
+        announced = None
+        for step in range(settings.max_steps + 1):
+            if step == settings.max_steps:   # ใช้รอบเครื่องมือครบ -> ขอคำตอบสรุป (ยังส่ง tools ไปเพราะประวัติมี tool call)
+                note = {"role": "user", "content": _STEP_LIMIT_NOTE}
+                convo.append(note)
+                new.append(note)
+            res = await self._generate(convo, model, emit)
+            for k in usage:
+                usage[k] += int(res.usage.get(k) or 0)
+            if res.model != announced:
+                emit({"type": "model", "model": res.model})
+                announced = res.model
+            if not res.ok:
+                emit({"type": "error", "message": res.error})
+                if res.text:
+                    new.append({"role": "assistant", "content": res.text})
+                break
+            msg = res.assistant_message()
+            if step == settings.max_steps:
+                msg.pop("tool_calls", None)
+                msg.pop("native", None)   # มี tool call ที่ไม่ได้รัน — ส่งกลับแบบเดิมไม่ได้
+            convo.append(msg)
+            new.append(msg)
+            if not msg.get("tool_calls"):
+                break
+            results = await self._run_tools(res.tool_calls, ctx, emit)
+            convo.extend(results)
+            new.extend(results)
+
+        final = res.text if res is not None and res.ok else ""
+        if checks and final.strip():
+            final = await self._review(text, final, checks, convo, new, model, emit)
+
+        self.store.add_messages(sid, new)
+        emit({"type": "done", "text": final, "model": res.model if res else None, "session_id": sid, "usage": usage})
+
+    async def _run_tools(self, calls, ctx: ToolContext, emit: Emit) -> list[dict]:
+        for call in calls:
+            emit({"type": "tool_call", "id": call.id, "name": call.name, "arguments": call.arguments})
+        outcomes = await asyncio.gather(*(self.tools.call(c.name, c.arguments, ctx, settings.tool_timeout_seconds)
+                                          for c in calls))
+        results = []
+        for call, (ok, output) in zip(calls, outcomes):
+            emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": ok, "preview": output[:300]})
+            msg = {"role": "tool", "tool_call_id": call.id, "name": call.name, "content": output}
+            if not ok:
+                msg["is_error"] = True
+            results.append(msg)
+        return results
+
+    async def _review(self, question: str, answer: str, checks: list[str], convo: list[dict], new: list[dict],
+                      model: str | None, emit: Emit) -> str:
+        raw = await self._generate([{"role": "user", "content": checklist.review_prompt(question, answer, checks)}],
+                                   model, None, use_tools=False)
+        failed = checklist.parse_review(raw.text, checks) if raw.ok else []
+        if not failed:
+            return answer
+        emit({"type": "revision", "failed": failed})
+        retry = await self._generate([*convo, {"role": "user", "content": checklist.retry_instruction(failed)}],
+                                     model, emit, use_tools=False)
+        if not retry.ok or not retry.text.strip():
+            return answer
+        # เก็บฉบับแก้แทนคำตอบเดิม เป็นข้อความธรรมดา (thinking ของฉบับแก้เกิดในบริบทที่มีคำสั่งตรวจ ส่งกลับไม่ได้)
+        new[-1] = {"role": "assistant", "content": retry.text}
+        return retry.text
+
+    async def briefing(self) -> str:
+        """สรุปประจำวัน (scheduler เรียกตามเวลา / POST /briefing) -> ประกาศ + แจ้งเตือนขึ้นจอ"""
+        from datetime import datetime
+
+        from april.tools.builtin import mac_notify, tz
+
+        sid = f"briefing-{datetime.now(tz()):%Y%m%d}"
+        result = await self.ask(BRIEFING_REQUEST, session_id=sid)
+        text = result.get("text") or ""
+        if text:
+            self.store.announce("briefing", "สรุปประจำวัน", text)
+            await mac_notify(f"{settings.name} · สรุปประจำวัน", text)
+        return text
