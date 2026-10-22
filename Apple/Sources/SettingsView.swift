@@ -89,6 +89,9 @@ struct SettingsView: View {
                 }
             }
             .tabItem { Label("ความจำ", systemImage: "brain") }
+
+            UpdateSettings()
+                .tabItem { Label("อัปเดต", systemImage: "arrow.down.circle") }
             .task { notes = (try? await app.chat.api.notes()) ?? [] }
         }
         .frame(width: 560, height: 560)

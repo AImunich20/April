@@ -8,6 +8,7 @@
 #  ./Apple/release.sh 2.3.0          กำหนดเลขเอง
 #  ./Apple/release.sh current        ออกรุ่นตามเลขใน VERSION ตอนนี้ (ไม่ขึ้นเลข)
 #  ตัวเลือก: --notes "ข้อความ"  (ไม่ใส่ = สรุปจาก commit ตั้งแต่รุ่นก่อน) · --draft · --allow-dirty
+#           --beta  ออกเป็นรุ่นทดสอบ (prerelease) — แอปเห็นเฉพาะผู้ที่เปิด "รับรุ่นทดสอบ" ในตั้งค่า › อัปเดต
 #
 #  ขั้นตอน: เขียน VERSION -> commit "release vX" -> tag vX -> push main + tag -> build .dmg + .zip -> gh release create
 #  ต้องมี gh ที่ล็อกอินแล้ว (gh auth login)
@@ -19,11 +20,12 @@ ROOT="$(cd "$HERE/.." && pwd)"
 cd "$ROOT"
 
 BUMP="${1:-}"; shift || true
-NOTES=""; DRAFT=""; DIRTY=0
+NOTES=""; DRAFT=""; BETA=""; DIRTY=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --notes) NOTES="$2"; shift ;;
     --draft) DRAFT="--draft" ;;
+    --beta) BETA="--prerelease" ;;
     --allow-dirty) DIRTY=1 ;;
     *) echo "ไม่รู้จัก option: $1"; exit 2 ;;
   esac
@@ -66,5 +68,5 @@ echo "  ✔ push main + $TAG"
 
 "$HERE/build.sh" --dmg
 gh release create "$TAG" "$HERE/dist/April-$NEW.dmg" "$HERE/dist/April-$NEW.zip" \
-  --title "April $NEW" --notes "$NOTES" $DRAFT
+  --title "April $NEW" --notes "$NOTES" $DRAFT $BETA
 echo "  ✔ GitHub Release $TAG"

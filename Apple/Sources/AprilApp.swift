@@ -25,6 +25,9 @@ final class AppState {
         talk.willUseMic = { wake.pause() }
         talk.onIdleMic = { wake.resume() }
         wake.onWake = { [weak self] in self?.openTalk(fromWake: true) }
+        // อัปเดตอัตโนมัติเฉพาะตอนที่ April ไม่ได้กำลังตอบ/คุยด้วยเสียงอยู่ (แอปต้องปิดเปิดใหม่)
+        let chat = chat, talk = talk
+        updater.canApply = { !chat.busy && !talk.busy && !talk.convo }
     }
 
     func launch() {
@@ -127,8 +130,11 @@ struct AprilApp: App {
                 }
                 Divider()
                 Button("เริ่ม April ใหม่") { Task { await app.backend.restart() } }
-                Button(app.updater.available ? "อัปเดตเป็น \(app.updater.latest ?? "")" : "ตรวจหาอัปเดต") {
-                    Task { if app.updater.available { await app.updater.apply() } else { await app.updater.check(verbose: true); app.chat.banner = app.updater.message } }
+                if let n = app.updater.newest {
+                    Button("อัปเดตเป็น \(n.version)") { Task { await app.updater.install(n) } }
+                }
+                Button("ตรวจหาอัปเดต") {
+                    Task { await app.updater.check(verbose: true); app.chat.banner = app.updater.message }
                 }
                 Divider()
                 Button("หยุด April แล้วออก") { app.stopAndQuit() }.keyboardShortcut("q", modifiers: [.command, .option])
@@ -156,7 +162,9 @@ struct MenuBarContent: View {
         Button("คุยด้วยเสียง") { app.openTalk() }
         Button("เปิดหน้าแชท") { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
         Toggle("เรียกด้วยเสียง \"April\"", isOn: Binding(get: { app.wake.enabled }, set: { app.wake.enabled = $0 }))
-        if let m = app.updater.message, app.updater.available { Button(m) { Task { await app.updater.apply() } } }
+        if let n = app.updater.newest {
+            Button("อัปเดตเป็น April \(n.version)") { Task { await app.updater.install(n) } }
+        }
         Divider()
         Button("หยุด April แล้วออก") { app.stopAndQuit() }
         Button("ออก (April ทำงานต่อเบื้องหลัง)") { NSApp.terminate(nil) }
