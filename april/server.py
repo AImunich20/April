@@ -12,6 +12,7 @@ HTTP API ของ April (FastAPI) — ค่าเริ่มต้นเป�
   GET    /reminders
   GET    /announcements?unread=true   สิ่งที่ April แจ้งเอง · POST /announcements/read
   POST   /briefing                    สรุปประจำวันตอนนี้เลย
+  /api/*                              Control Center ของแอป Mac (april/control_api.py)
 
 ตั้ง APRIL_API_TOKEN = ทุกคำขอต้องมี Authorization: Bearer <token> (จำเป็นถ้าเปิด host อื่นนอกจาก 127.0.0.1)
 """
@@ -24,7 +25,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from april import __version__
+from april import __version__, control_api
 from april.agent.loop import Agent
 from april.config import settings
 from april.llm.ollama import OllamaProvider
@@ -51,6 +52,7 @@ def create_app(agent: Agent | None = None, run_scheduler: bool = True) -> FastAP
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         state["agent"] = agent or Agent(Store(settings.db_path))
+        state["agent"].store.mark_interrupted_runs()
         if run_scheduler:
             state["scheduler"] = Scheduler(state["agent"])
             state["scheduler"].start()
@@ -136,6 +138,7 @@ def create_app(agent: Agent | None = None, run_scheduler: bool = True) -> FastAP
     async def briefing():
         return {"text": await get_agent().briefing()}
 
+    control_api.register(app, get_agent)
     return app
 
 

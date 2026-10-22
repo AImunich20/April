@@ -10,8 +10,10 @@ april/tools/registry.py
 """
 
 import asyncio
+import collections
 import inspect
 import json
+import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
@@ -82,6 +84,7 @@ def validate(params: dict, args: dict) -> str | None:
 class ToolRegistry:
     def __init__(self):
         self.tools: dict[str, Tool] = {}
+        self.recent: collections.deque = collections.deque(maxlen=100)   # แท็บเครื่องมือ: การเรียกล่าสุด
 
     def tool(self, name: str, description: str, parameters: dict | None = None, action: bool = False):
         params = parameters or {"type": "object", "properties": {}}
@@ -97,6 +100,13 @@ class ToolRegistry:
         return [t.spec() for t in self.tools.values() if allow_actions or not t.action]
 
     async def call(self, name: str, args: dict, ctx: ToolContext, timeout: float = 30.0) -> tuple[bool, str]:
+        started = time.monotonic()
+        ok, out = await self._call(name, args, ctx, timeout)
+        self.recent.appendleft({"name": name, "arguments": args, "ok": ok, "preview": out[:200], "at": time.time(),
+                                "seconds": round(time.monotonic() - started, 3), "session_id": ctx.session_id})
+        return ok, out
+
+    async def _call(self, name: str, args: dict, ctx: ToolContext, timeout: float) -> tuple[bool, str]:
         tool = self.tools.get(name)
         if tool is None:
             return False, f"ERROR: ไม่มีเครื่องมือชื่อ '{name}'"

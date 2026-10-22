@@ -6,6 +6,7 @@ april/llm/router.py
 cloud ที่ล้มด้วยเหตุถาวร (คีย์ผิด/เกินโควตา/ต้องเติมเงิน) ถูกพักไว้ COOLDOWN วินาที ไม่ต้องเสียเวลาลองทุกคำขอ
 """
 
+import asyncio
 import time
 from typing import Callable
 
@@ -14,6 +15,7 @@ from april.llm.catalog import Catalog, ModelEntry, load_catalog
 from april.llm.ollama import OllamaProvider
 from april.llm.openai_compat import OpenAICompatProvider
 from april.llm.types import EventSink, LLMResponse, ToolSpec
+from april.observability import log
 
 COOLDOWN = 600
 _STICKY = ("401", "402", "403", "429", "API key", "เกินโควตา", "เกินอัตรา", "เติมเครดิต")
@@ -27,6 +29,8 @@ class Router:
         self.providers = providers or {"ollama": ollama, "ollama_cloud": ollama, "anthropic": AnthropicProvider(),
                                        "openai": compat, "gemini": compat, "openai_compat": compat}
         self.status: dict[str, dict] = {}
+        # สถิติตั้งแต่เปิดเซิร์ฟเวอร์ (แท็บภาพรวม/โมเดลของ Control Center)
+        self.stats: dict[str, dict] = {}
 
     def _cooling(self, entry: ModelEntry) -> bool:
         s = self.status.get(entry.id) or {}
@@ -35,6 +39,32 @@ class Router:
     def _record(self, entry: ModelEntry, res: LLMResponse, seconds: float) -> None:
         self.status[entry.id] = {"at": time.time(), "ok": res.ok, "error": res.error, "seconds": round(seconds, 2),
                                  "sticky": bool(res.error and any(s in res.error for s in _STICKY))}
+        st = self.stats.setdefault(entry.id, {"calls": 0, "errors": 0, "seconds": 0.0, "input_tokens": 0,
+                                              "output_tokens": 0})
+        st["calls"] += 1
+        st["errors"] += 0 if res.ok else 1
+        st["seconds"] += seconds
+        st["input_tokens"] += int(res.usage.get("input_tokens") or 0)
+        st["output_tokens"] += int(res.usage.get("output_tokens") or 0)
+        log("llm_call", level="info" if res.ok else "warning", model=entry.id, seconds=round(seconds, 2),
+            error=res.error, **{k: res.usage.get(k) for k in ("input_tokens", "output_tokens") if res.usage.get(k)})
+
+    def totals(self) -> dict:
+        keys = ("calls", "errors", "input_tokens", "output_tokens")
+        return {k: sum(s[k] for s in self.stats.values()) for k in keys}
+
+    async def probe(self, timeout: float = 30) -> None:
+        """ลองเรียก cloud ทุกตัวที่ตั้งค่าครบด้วยข้อความสั้นมาก (ปุ่ม "ตรวจตอนนี้") — ตัวที่ตอบได้หายจากสถานะพักทันที"""
+        async def one(entry: ModelEntry) -> None:
+            started = time.monotonic()
+            try:
+                res = await asyncio.wait_for(self.providers[entry.provider].generate(
+                    entry, [{"role": "user", "content": "ตอบคำเดียว: ok"}], [], None), timeout)
+            except asyncio.TimeoutError:
+                res = LLMResponse(error=f"ไม่ตอบภายใน {timeout:.0f} วิ")
+            self._record(entry, res, time.monotonic() - started)
+
+        await asyncio.gather(*(one(m) for m in self.catalog.cloud if m.ready()))
 
     def plan(self, requested: str | None) -> list[ModelEntry]:
         chain = self.catalog.chain(requested)
@@ -63,5 +93,16 @@ class Router:
             if s:
                 d["last"] = {k: s[k] for k in ("ok", "error", "seconds", "at")}
             d["cooling"] = self._cooling(m)
+            st = self.stats.get(m.id)
+            if st:
+                d["stats"] = {**st, "avg_seconds": round(st["seconds"] / st["calls"], 2) if st["calls"] else None}
+            if not m.ready():
+                d["state"] = "unset"
+            elif d["cooling"]:
+                d["state"] = "paused"
+            elif not s:
+                d["state"] = "unknown"
+            else:
+                d["state"] = "online" if s["ok"] else "error"
             out.append(d)
         return out

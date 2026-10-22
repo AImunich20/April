@@ -133,3 +133,28 @@ async def test_voice_mode_asks_for_spoken_answer(store):
     agent, local, _ = make_agent(store, [reply("แปดโมงครับ")])
     await events(agent, "กี่โมงแล้ว", voice=True)
     assert "คุยด้วยเสียง" in local.calls[0]["messages"][-1]["content"]
+
+
+async def test_wrong_number_in_answer_is_fixed(store):
+    agent, local, _ = make_agent(store, [
+        reply(calls=[("calculate", {"expression": "3750*18"})]),
+        reply("ได้หกหมื่นเจ็ดพันหกล้านบาทครับ"),
+        reply("ได้ 67,500 บาทครับ"),
+    ])
+    evs = await events(agent, "ออมเดือนละ 3750 18 เดือนได้เท่าไหร่", voice=True)
+    assert any(e["type"] == "revision" for e in evs)
+    assert evs[-1]["text"] == "ได้ 67,500 บาทครับ"
+    assert "67,500" in local.calls[2]["messages"][-1]["content"]
+    assert store.messages(evs[0]["session_id"])[-1] == {"role": "assistant", "content": "ได้ 67,500 บาทครับ"}
+
+
+async def test_correct_number_is_not_retried(store):
+    agent, local, _ = make_agent(store, [reply(calls=[("calculate", {"expression": "1250*12"})]), reply("15000 บาทครับ")])
+    evs = await events(agent, "1250 คูณ 12")
+    assert not any(e["type"] == "revision" for e in evs) and len(local.calls) == 2
+
+
+async def test_failed_number_fix_keeps_original(store):
+    agent, _, _ = make_agent(store, [reply(calls=[("calculate", {"expression": "2*2"})]), reply("สี่ครับ"), reply("ยังสี่ครับ")])
+    evs = await events(agent, "2 คูณ 2")
+    assert evs[-1]["text"] == "สี่ครับ"

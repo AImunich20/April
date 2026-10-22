@@ -24,6 +24,13 @@ final class Backend {
     let port = 8100
 
     var baseURL: URL { URL(string: "http://127.0.0.1:\(port)")! }
+    /// APRIL_API_TOKEN ใน .env (ตั้งเมื่อเปิดให้เครื่องอื่นเรียก) — ทุกคำขอของแอปแนบให้เอง
+    var token: String { envFile.flatMap { EnvFile(url: $0).read()["APRIL_API_TOKEN"] } ?? "" }
+    var api: AprilAPI { AprilAPI(base: baseURL, token: token) }
+
+    func authorize(_ req: inout URLRequest) {
+        if !token.isEmpty { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    }
 
     nonisolated static func isProject(_ url: URL) -> Bool {
         FileManager.default.fileExists(atPath: url.appendingPathComponent("april/__init__.py").path)
@@ -59,11 +66,21 @@ final class Backend {
     }
 
     // ---- health
-    nonisolated func healthy() async -> Bool {
+    func healthy() async -> Bool {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:8100/health")!)
         req.timeoutInterval = 2
+        authorize(&req)
         guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return false }
         return (resp as? HTTPURLResponse)?.statusCode == 200
+    }
+
+    func serverVersion() async -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("health"))
+        req.timeoutInterval = 2
+        authorize(&req)
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let o = (try? JSONSerialization.jsonObject(with: data)) as? JSON else { return nil }
+        return o.str("version")
     }
 
     func waitHealthy(seconds: Double) async -> Bool {
@@ -101,6 +118,13 @@ final class Backend {
             root = target
             if up { await stop() }        // เซิร์ฟเวอร์รุ่นเก่ายังรันอยู่ -> เปิดใหม่ด้วยโค้ดรุ่นนี้
         } else if up {
+            // เซิร์ฟเวอร์ที่รันค้างอยู่เป็นโค้ดรุ่นเก่า (เพิ่งอัปเดตแอป) -> เริ่มใหม่ให้ตรงรุ่น ไม่งั้นศูนย์ควบคุมเรียก API ใหม่ไม่ได้
+            if let v = await serverVersion(), v != Installer.appVersion {
+                log = "เซิร์ฟเวอร์เป็นรุ่น \(v) — เริ่มใหม่เป็นรุ่น \(Installer.appVersion)"
+                await stop()
+                await start()
+                return
+            }
             online = true
             phase = .ready
             return

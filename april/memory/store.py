@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY, text TEXT, due_at 
                                       done INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY, kind TEXT, title TEXT, text TEXT, created REAL,
                                           read INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, session_id TEXT, message TEXT, status TEXT, model TEXT,
+                                 tools TEXT, error TEXT, answer TEXT, input_tokens INTEGER, output_tokens INTEGER,
+                                 voice INTEGER, started REAL, finished REAL);
+CREATE INDEX IF NOT EXISTS runs_started ON runs(started);
 """
 
 
@@ -118,9 +122,12 @@ class Store:
         return self._insert("INSERT INTO reminders (text, due_at, created) VALUES (?, ?, ?)",
                             (text.strip(), due_at, time.time()))
 
-    def reminders(self, include_done: bool = False) -> list[dict]:
-        sql = "SELECT * FROM reminders" + ("" if include_done else " WHERE done = 0") + " ORDER BY due_at"
-        return [dict(r) for r in self._q(sql)]
+    def reminders(self, include_done: bool = False, status: str | None = None) -> list[dict]:
+        """status: pending (ยังไม่ถึงเวลา) · sent (แจ้งแล้ว/ยกเลิก) · all — ไม่ระบุ = ตาม include_done"""
+        where = {"pending": " WHERE done = 0", "sent": " WHERE done = 1", "all": ""}.get(
+            status or ("all" if include_done else "pending"), " WHERE done = 0")
+        order = " ORDER BY due_at" + (" DESC" if status == "sent" else "")
+        return [dict(r) for r in self._q("SELECT * FROM reminders" + where + order)]
 
     def due_reminders(self, now: float | None = None) -> list[dict]:
         return [dict(r) for r in self._q("SELECT * FROM reminders WHERE done = 0 AND due_at <= ? ORDER BY due_at",
@@ -130,6 +137,46 @@ class Store:
         found = bool(self._q("SELECT 1 FROM reminders WHERE id = ? AND done = 0", (reminder_id,)))
         self._q("UPDATE reminders SET done = 1 WHERE id = ?", (reminder_id,))
         return found
+
+    # ------------------------------------------------------------------ runs (ประวัติงาน — แท็บ "งาน" ของ Control Center)
+    def start_run(self, run_id: str, session_id: str, message: str, voice: bool) -> None:
+        self._q("INSERT OR REPLACE INTO runs (id, session_id, message, status, voice, started) VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, session_id, message[:500], "running", int(voice), time.time()))
+
+    def finish_run(self, run_id: str, status: str, *, model: str | None = None, tools: list[str] | None = None,
+                   error: str | None = None, answer: str = "", usage: dict | None = None) -> None:
+        usage = usage or {}
+        self._q("UPDATE runs SET status = ?, model = ?, tools = ?, error = ?, answer = ?, input_tokens = ?, "
+                "output_tokens = ?, finished = ? WHERE id = ?",
+                (status, model, json.dumps(tools or [], ensure_ascii=False), error, answer[:2000],
+                 usage.get("input_tokens"), usage.get("output_tokens"), time.time(), run_id))
+
+    def runs(self, limit: int = 150) -> list[dict]:
+        out = []
+        for r in self._q("SELECT * FROM runs ORDER BY started DESC LIMIT ?", (limit,)):
+            d = dict(r)
+            d["tools"] = json.loads(d["tools"] or "[]")
+            d["duration_seconds"] = round(d["finished"] - d["started"], 2) if d["finished"] else None
+            out.append(d)
+        return out
+
+    def run_stats(self, since: float) -> dict:
+        stats: dict = {}
+        for r in self._q("SELECT status, COUNT(*) AS n, AVG(finished - started) AS avg, SUM(input_tokens) AS tin, "
+                         "SUM(output_tokens) AS tout FROM runs WHERE started >= ? GROUP BY status", (since,)):
+            stats[r["status"]] = {"count": r["n"], "avg_seconds": round(r["avg"] or 0, 2),
+                                  "input_tokens": r["tin"] or 0, "output_tokens": r["tout"] or 0}
+        return stats
+
+    def mark_interrupted_runs(self) -> None:
+        """เซิร์ฟเวอร์ปิดกลางคัน — งานที่ค้างสถานะ running ไม่มีวันจบแล้ว"""
+        self._q("UPDATE runs SET status = 'cancelled', error = 'เซิร์ฟเวอร์ปิดระหว่างทำงาน', finished = ? "
+                "WHERE status = 'running'", (time.time(),))
+
+    def counts(self) -> dict:
+        one = lambda sql: self._q(sql)[0][0]  # noqa: E731
+        return {"notes": one("SELECT COUNT(*) FROM notes"), "sessions": one("SELECT COUNT(*) FROM sessions"),
+                "reminders_pending": one("SELECT COUNT(*) FROM reminders WHERE done = 0")}
 
     # ------------------------------------------------------------------ announcements
     def announce(self, kind: str, title: str, text: str) -> int:

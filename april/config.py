@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     owner_name: str = ""                  # ชื่อเจ้านาย (ว่าง = เรียกว่า "บอส")
     timezone: str = "Asia/Bangkok"
     language: str = "ไทย"
+    particle: str = "ครับ"                # คำลงท้าย (ครับ / ค่ะ)
 
     # ที่เก็บข้อมูล / เซิร์ฟเวอร์
     data_dir: Path = ROOT / "data"
