@@ -17,7 +17,7 @@ import asyncio
 from typing import AsyncIterator, Callable
 
 from april.agent import checklist
-from april.agent.prompts import BRIEFING_REQUEST, system_prompt, turn_context
+from april.agent.prompts import BRIEFING_REQUEST, VOICE_STYLE, system_prompt, turn_context
 from april.config import settings
 from april.llm.router import Router
 from april.memory.store import Store
@@ -35,9 +35,10 @@ class Agent:
         self.tools = tools or default_registry
 
     async def run(self, text: str, *, session_id: str | None = None, model: str | None = None,
-                  images: list[str] | None = None) -> AsyncIterator[dict]:
+                  images: list[str] | None = None, voice: bool = False) -> AsyncIterator[dict]:
+        """voice=True = คำตอบจะถูกอ่านออกเสียง (แอป Mac โหมดคุยด้วยเสียง) -> ขอคำตอบสั้นแบบภาษาพูด"""
         queue: asyncio.Queue = asyncio.Queue()
-        task = asyncio.create_task(self._run_safe(text, session_id, model, images, queue.put_nowait))
+        task = asyncio.create_task(self._run_safe(text, session_id, model, images, voice, queue.put_nowait))
         try:
             while (event := await queue.get()) is not None:
                 yield event
@@ -56,9 +57,9 @@ class Agent:
                 done = event
         return {**done, "tools": tools}
 
-    async def _run_safe(self, text, session_id, model, images, emit: Emit) -> None:
+    async def _run_safe(self, text, session_id, model, images, voice, emit: Emit) -> None:
         try:
-            await self._run(text, session_id, model, images, emit)
+            await self._run(text, session_id, model, images, voice, emit)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — ผู้ใช้ต้องได้ event done เสมอ ไม่ค้าง
@@ -73,7 +74,8 @@ class Agent:
         on_fallback = (lambda a, b, why: emit({"type": "fallback", "from": a, "to": b, "reason": why})) if emit else None
         return await self.router.generate(convo, specs, model=model, on_event=on_event, on_fallback=on_fallback)
 
-    async def _run(self, text: str, session_id: str | None, model: str | None, images, emit: Emit) -> None:
+    async def _run(self, text: str, session_id: str | None, model: str | None, images, voice: bool,
+                   emit: Emit) -> None:
         sid = self.store.ensure_session(session_id, title=text.strip().splitlines()[0][:60] if text.strip() else "")
         emit({"type": "session", "session_id": sid})
         history = self.store.history(sid, settings.history_messages)
@@ -86,7 +88,8 @@ class Agent:
             if checks:
                 emit({"type": "checklist", "checks": checks})
 
-        content = text + (checklist.prompt_block(checks) if checks else "") + turn_context()
+        content = (text + (checklist.prompt_block(checks) if checks else "") + turn_context()
+                   + (VOICE_STYLE if voice else ""))
         user_msg: dict = {"role": "user", "content": content, "text": text}
         if images:
             user_msg["images"] = images

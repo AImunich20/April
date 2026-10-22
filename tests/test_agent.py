@@ -127,3 +127,9 @@ async def test_reminder_tool_and_scheduler(store):
     await Scheduler(agent).tick(datetime.now(tz()) + timedelta(minutes=6))
     assert store.reminders() == []
     assert store.announcements()[0]["text"] == "โทรหาแม่"
+
+
+async def test_voice_mode_asks_for_spoken_answer(store):
+    agent, local, _ = make_agent(store, [reply("แปดโมงครับ")])
+    await events(agent, "กี่โมงแล้ว", voice=True)
+    assert "คุยด้วยเสียง" in local.calls[0]["messages"][-1]["content"]

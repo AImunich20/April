@@ -1,0 +1,9 @@
+# ให้ตรงกับ dependencies ใน pyproject.toml — ตัวติดตั้งในแอป Mac (Apple/Sources/Installer.swift) ใช้ไฟล์นี้
+fastapi
+uvicorn[standard]
+httpx
+anthropic>=2.1
+pydantic-settings
+pyyaml
+ddgs
+trafilatura

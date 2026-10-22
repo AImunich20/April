@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
     model: str | None = None
     images: list[str] | None = None       # base64 (jpeg/png)
+    voice: bool = False                   # คำตอบจะถูกอ่านออกเสียง -> สั้น ภาษาพูด ไม่มี markdown
 
 
 def require_token(authorization: str = Header("")) -> None:
@@ -80,7 +81,7 @@ def create_app(agent: Agent | None = None, run_scheduler: bool = True) -> FastAP
 
         async def stream():
             async for event in get_agent().run(req.message, session_id=req.session_id, model=req.model,
-                                               images=req.images):
+                                               images=req.images, voice=req.voice):
                 yield f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False, default=str)}\n\n"
         return StreamingResponse(stream(), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -88,7 +89,8 @@ def create_app(agent: Agent | None = None, run_scheduler: bool = True) -> FastAP
     @app.post("/chat/sync")
     async def chat_sync(req: ChatRequest):
         check_model(req.model)
-        return await get_agent().ask(req.message, session_id=req.session_id, model=req.model, images=req.images)
+        return await get_agent().ask(req.message, session_id=req.session_id, model=req.model, images=req.images,
+                                   voice=req.voice)
 
     @app.get("/sessions")
     async def sessions():
