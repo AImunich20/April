@@ -1,5 +1,5 @@
 // ControlCenter.swift — หน้าต่างหลักของแอป = ศูนย์ควบคุม (โครงและหน้าตาเดียวกับหน้า "ระบบ" ของ Envy)
-//   ภาพรวม · RAM · งาน · ตั้งเวลา · โมเดล · Log · ความจำ · คาแรคเตอร์ · เครื่องมือ · เสียง · การเชื่อมต่อ · อัปเดต
+//   ภาพรวม · RAM · งาน · ตั้งเวลา · โมเดล · Log · ความจำ · คาแรคเตอร์ · เครื่องมือ · เสียง · การมองเห็น · การเชื่อมต่อ · อัปเดต
 // การใช้งาน April จริงไม่ได้อยู่ที่นี่ — เรียกแบบ Dynamic Island (⌥Space / "April") ดู Island.swift
 // ข้อมูลมาจาก /api/* ของเซิร์ฟเวอร์ (april/control_api.py) · ค่าตั้งเขียนลง .env แล้วเริ่มเซิร์ฟเวอร์ใหม่
 
@@ -47,7 +47,8 @@ enum Fmt {
 
 enum SysTab: String, CaseIterable, Identifiable {
     case overview = "ภาพรวม", ram = "RAM", tasks = "งาน", scheduled = "ตั้งเวลา", models = "โมเดล", logs = "Log",
-         memory = "ความจำ", persona = "คาแรคเตอร์", tools = "เครื่องมือ", voice = "เสียง", connections = "การเชื่อมต่อ",
+         memory = "ความจำ", persona = "คาแรคเตอร์", tools = "เครื่องมือ", voice = "เสียง", vision = "การมองเห็น",
+         connections = "การเชื่อมต่อ",
          update = "อัปเดต"
     var id: String { rawValue }
     var icon: String {
@@ -62,6 +63,7 @@ enum SysTab: String, CaseIterable, Identifiable {
         case .persona: "person.crop.circle.badge.checkmark"
         case .tools: "wrench.adjustable"
         case .voice: "waveform"
+        case .vision: "eye"
         case .connections: "point.3.connected.trianglepath.dotted"
         case .update: "arrow.triangle.2.circlepath"
         }
@@ -120,6 +122,7 @@ final class SystemModel {
     var config: JSON = [:]
     var tools: JSON = [:]
     var toolResult: JSON?
+    var visionInfo: JSON = [:]
     var backendVersion: String?
     var saved: String?
 
@@ -156,6 +159,7 @@ final class SystemModel {
             }
         case .tools: await load { tools = try await api.call("GET", "api/tools") }
         case .voice: break
+        case .vision: await load { visionInfo = try await api.call("GET", "api/vision") }
         case .connections: await load { config = try await api.call("GET", "api/config") }
         case .update: await load { backendVersion = try await api.call("GET", "api/version").str("version") }
         }
@@ -163,7 +167,7 @@ final class SystemModel {
 
     var interval: Double {
         switch tab {
-        case .overview, .ram, .tasks: 3
+        case .overview, .ram, .tasks, .vision: 3
         case .models: 10
         case .persona, .tools, .connections, .voice: 120   // แก้ไขอยู่ — ไม่รีเฟรชทับบ่อย
         case .update: 60
@@ -187,6 +191,7 @@ final class SystemModel {
     func cancelReminder(_ id: Int) { act { try await self.api.call("DELETE", "api/reminders/\(id)") } }
     func addNote(_ text: String) { act { try await self.api.call("POST", "api/notes", json: ["text": text]) } }
     func deleteNote(_ id: Int) { act { try await self.api.call("DELETE", "notes/\(id)") } }
+    func unwatch(_ id: Int) { act { try await self.api.call("DELETE", "api/vision/watches/\(id)") } }
     func briefingNow() {
         act {
             let t = try await self.api.call("POST", "briefing", timeout: 300).str("text") ?? ""
@@ -338,6 +343,7 @@ struct SystemView: View {
                 case .persona: PersonaTab(model: model)
                 case .tools: ToolsTab(model: model)
                 case .voice: VoiceTab()
+                case .vision: VisionTab(model: model)
                 case .connections: ConnectionsTab(model: model)
                 case .update: UpdateTab(model: model)
                 }
@@ -376,7 +382,8 @@ struct HScroll<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         #if APRIL_PREVIEW
-        content
+        // แท็บยาวกว่าหน้าต่าง = ตัดขวา (แบบแอปจริงที่เลื่อนได้) — overlay ไม่ดันความกว้างของทั้งหน้า
+        Color.clear.frame(maxWidth: .infinity).frame(height: 54).overlay(alignment: .leading) { content.fixedSize() }.clipped()
         #else
         ScrollView(.horizontal, showsIndicators: false) { content }
         #endif

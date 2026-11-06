@@ -6,6 +6,7 @@ april/llm/types.py
 ข้อความ (dict ธรรมดา เก็บลงฐานข้อมูลเป็น JSON ได้ตรงๆ):
   {"role": "system" | "user" | "assistant" | "tool", "content": str}
   user       + "images": [base64, ...]                       (ไม่บังคับ)
+  tool       + "images": [base64, ...], "camera": True       (ไม่บังคับ — ภาพจากเครื่องมือ เช่น look จากกล้อง)
   assistant  + "tool_calls": [{"id", "name", "arguments": dict}]
              + "native": {"provider", "model", "content"}     (ไม่บังคับ — content ดั้งเดิมของ provider
                เช่น thinking block ของ Claude ที่ต้องส่งกลับแบบไม่แก้ไข ใช้เมื่อส่งกลับไป provider+model เดิม)
@@ -14,6 +15,15 @@ april/llm/types.py
 
 from dataclasses import dataclass, field
 from typing import Callable
+
+_MAGIC = {"/9j/": "image/jpeg", "iVBOR": "image/png", "R0lGOD": "image/gif", "UklGR": "image/webp"}
+TOOL_IMAGE_NOTE = "(ภาพจากผลเครื่องมือ {name} ด้านบน)"
+
+
+def image_media_type(b64: str) -> str:
+    """ชนิดภาพจากหัวไฟล์ใน base64 (API ไม่รับถ้าบอกชนิดผิด เช่น ส่ง PNG แต่บอกว่า JPEG)"""
+    return next((t for prefix, t in _MAGIC.items() if b64.startswith(prefix)), "image/jpeg")
+
 
 # on_event(kind, text): kind = "token" (ข้อความคำตอบ) | "thinking" (สรุปการคิด)
 EventSink = Callable[[str, str], None]

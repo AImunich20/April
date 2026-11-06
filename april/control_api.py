@@ -11,6 +11,8 @@ API ของ Control Center ในแอป Mac (/api/*) — โครงเด
   POST /api/notes                                                 จดความจำเอง
   GET  /api/persona                                               ตัวตน + system prompt ที่ใช้จริง
   GET  /api/tools · POST /api/tools/{name}/run                    เครื่องมือในตัว + ทดลองรัน (ไม่ผ่านโมเดล)
+  GET  /api/vision · POST /api/vision/frame · POST /api/vision/event · POST /api/vision/stopped
+  GET  /api/vision/demand?wait= · DELETE /api/vision/watches/{id}   การมองเห็น (april/vision.py)
   GET  /api/config · GET /api/version
 ค่าตั้งแก้ที่ไฟล์ .env (แอปเขียนให้) แล้วเริ่มเซิร์ฟเวอร์ใหม่
 """
@@ -31,6 +33,7 @@ from april.config import settings
 from april.llm.ollama import OllamaProvider
 from april.tools.builtin import tz
 from april.tools.registry import ToolContext
+from april.vision import hub
 
 STARTED = time.time()
 _KEYS = ("ANTHROPIC_API_KEY", "OLLAMA_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
@@ -46,6 +49,30 @@ class UnloadIn(BaseModel):
 
 class ToolRunIn(BaseModel):
     arguments: dict = {}
+
+
+class VisionFrameIn(BaseModel):
+    """ผลตรวจจับจากแอป Mac (Vision.swift) — jpeg = base64 ของภาพล่าสุด (ไม่บังคับ)"""
+    model_config = {"extra": "allow"}
+    jpeg: str | None = None
+    width: int | None = None
+    height: int | None = None
+    people: int = 0
+    faces: int = 0
+    animals: list[str] = []
+    objects: list[dict] = []
+    scene: list[str] = []
+    motion: float = 0.0
+    mode: str = ""
+
+
+class VisionEventIn(BaseModel):
+    kind: str
+    label: str = ""
+    away_seconds: float | None = None
+    jpeg: str | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 def _mask(key: str) -> str:
@@ -217,6 +244,37 @@ def register(app: FastAPI, get_agent: Callable) -> None:
                           result=out[:200])
         return {"ok": ok, "result": out, "seconds": round(time.monotonic() - started, 3)}
 
+    @app.get("/api/vision")
+    async def vision():
+        info = hub.describe()
+        info["models"] = [{"id": m.id, "label": m.label or m.model, "local": m.local}
+                          for m in get_agent().router.catalog.all() if m.vision and m.ready()]
+        return info
+
+    @app.post("/api/vision/frame")
+    async def vision_frame(body: VisionFrameIn):
+        return hub.update(body.model_dump())
+
+    @app.post("/api/vision/event")
+    async def vision_event(body: VisionEventIn):
+        return await hub.event(body.model_dump())
+
+    @app.post("/api/vision/stopped")
+    async def vision_stopped():
+        hub.stopped()
+        return {"ok": True}
+
+    @app.get("/api/vision/demand")
+    async def vision_demand(wait: float = 25):
+        return await hub.wait_demand(wait)
+
+    @app.delete("/api/vision/watches/{watch_id}")
+    async def vision_unwatch(watch_id: int):
+        if not hub.remove_watch(watch_id):
+            raise HTTPException(404, "ไม่พบสิ่งที่เฝ้าดูนี้")
+        observability.log("vision_watch_removed", id=watch_id)
+        return {"ok": True}
+
     @app.get("/api/config")
     async def config():
         agent = get_agent()
@@ -233,4 +291,6 @@ def register(app: FastAPI, get_agent: Callable) -> None:
                 "next_briefing": nxt.timestamp() if nxt else None, "allow_actions": settings.allow_actions,
                 "checklist_enabled": settings.checklist_enabled, "notify_mac": settings.notify_mac,
                 "host": settings.host, "port": settings.port, "api_token_set": bool(settings.api_token),
-                "keys": {k: _mask(settings.key(k)) for k in _KEYS}, "data_dir": str(settings.data_dir)}
+                "keys": {k: _mask(settings.key(k)) for k in _KEYS}, "data_dir": str(settings.data_dir),
+                "vision_model": settings.vision_model, "vision_cloud": settings.vision_cloud,
+                "vision_alerts": settings.vision_alerts}

@@ -10,16 +10,31 @@ import json
 import httpx
 
 from april.llm.catalog import ModelEntry
-from april.llm.types import EventSink, LLMResponse, ToolCall, ToolSpec
+from april.llm.types import TOOL_IMAGE_NOTE, EventSink, LLMResponse, ToolCall, ToolSpec, image_media_type
 
 BASE_URLS = {"openai": "https://api.openai.com/v1",
              "gemini": "https://generativelanguage.googleapis.com/v1beta/openai"}
 
 
+def _image_parts(images: list[str]) -> list[dict]:
+    return [{"type": "image_url", "image_url": {"url": f"data:{image_media_type(b)};base64,{b}"}} for b in images]
+
+
 def to_openai(messages: list[dict]) -> list[dict]:
+    """ผลเครื่องมือ (role tool) ใส่ภาพไม่ได้ — ภาพจากเครื่องมือส่งเป็นข้อความ user ต่อท้ายผลเครื่องมือชุดนั้น"""
     out = []
+    tool_images: list[tuple[str, list[str]]] = []
+
+    def flush():
+        for name, images in tool_images:
+            out.append({"role": "user", "content": [{"type": "text", "text": TOOL_IMAGE_NOTE.format(name=name)},
+                                                    *_image_parts(images)]})
+        tool_images.clear()
+
     for m in messages:
         role = m["role"]
+        if role != "tool":
+            flush()
         if role == "assistant" and m.get("tool_calls"):
             out.append({"role": "assistant", "content": m.get("content") or "",
                         "tool_calls": [{"id": c["id"], "type": "function",
@@ -29,12 +44,14 @@ def to_openai(messages: list[dict]) -> list[dict]:
                                        for c in m["tool_calls"]]})
         elif role == "tool":
             out.append({"role": "tool", "tool_call_id": m.get("tool_call_id", ""), "content": str(m.get("content", ""))})
+            if m.get("images"):
+                tool_images.append((m.get("name") or "", m["images"]))
         elif m.get("images"):
-            parts = [{"type": "text", "text": m.get("content") or ""}]
-            parts += [{"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b}"}} for b in m["images"]]
-            out.append({"role": role, "content": parts})
+            out.append({"role": role, "content": [{"type": "text", "text": m.get("content") or ""},
+                                                  *_image_parts(m["images"])]})
         else:
             out.append({"role": role, "content": m.get("content") or ""})
+    flush()
     return out
 
 

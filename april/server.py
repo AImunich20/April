@@ -31,6 +31,7 @@ from april.config import settings
 from april.llm.ollama import OllamaProvider
 from april.memory.store import Store
 from april.scheduler import Scheduler
+from april.vision import hub
 
 
 class ChatRequest(BaseModel):
@@ -53,6 +54,7 @@ def create_app(agent: Agent | None = None, run_scheduler: bool = True) -> FastAP
     async def lifespan(app: FastAPI):
         state["agent"] = agent or Agent(Store(settings.db_path))
         state["agent"].store.mark_interrupted_runs()
+        hub.attach(state["agent"])
         if run_scheduler:
             state["scheduler"] = Scheduler(state["agent"])
             state["scheduler"].start()

@@ -15,7 +15,7 @@ Claude ผ่าน Anthropic SDK ทางการ (AsyncAnthropic, streaming 
 import anthropic
 
 from april.llm.catalog import ModelEntry
-from april.llm.types import EventSink, LLMResponse, ToolCall, ToolSpec
+from april.llm.types import EventSink, LLMResponse, ToolCall, ToolSpec, image_media_type
 
 MAX_TOKENS = 64000
 _FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-1"}
@@ -28,6 +28,10 @@ _KEEP = {"text": ("type", "text"), "thinking": ("type", "thinking", "signature")
 def _replay(block: dict) -> dict:
     keep = _KEEP.get(block.get("type"))
     return {k: block[k] for k in keep if k in block} if keep else block
+
+
+def image_block(b64: str) -> dict:
+    return {"type": "image", "source": {"type": "base64", "media_type": image_media_type(b64), "data": b64}}
 
 
 def to_anthropic(messages: list[dict], model: str) -> tuple[str, list[dict]]:
@@ -47,8 +51,9 @@ def to_anthropic(messages: list[dict], model: str) -> tuple[str, list[dict]]:
             system.append(m.get("content") or "")
             continue
         if role == "tool":
-            pending_results.append({"type": "tool_result", "tool_use_id": m.get("tool_call_id", ""),
-                                    "content": str(m.get("content") or "(ว่าง)"),
+            text = str(m.get("content") or "(ว่าง)")
+            content = ([{"type": "text", "text": text}, *map(image_block, m["images"])] if m.get("images") else text)
+            pending_results.append({"type": "tool_result", "tool_use_id": m.get("tool_call_id", ""), "content": content,
                                     **({"is_error": True} if m.get("is_error") else {})})
             continue
         flush()
@@ -66,8 +71,7 @@ def to_anthropic(messages: list[dict], model: str) -> tuple[str, list[dict]]:
                 out.append({"role": "assistant", "content": blocks})
         else:
             if m.get("images"):
-                content = [{"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b}}
-                           for b in m["images"]]
+                content = [image_block(b) for b in m["images"]]
                 content.append({"type": "text", "text": m.get("content") or ""})
                 out.append({"role": "user", "content": content})
             else:

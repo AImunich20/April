@@ -16,6 +16,7 @@
 	<key>NSHighResolutionCapable</key>		<true/>
 	<key>NSPrincipalClass</key>			<string>NSApplication</string>
 	<key>NSMicrophoneUsageDescription</key>		<string>April ใช้ไมโครโฟนเมื่อคุณคุยด้วยเสียง หรือเปิดให้เรียกด้วยคำว่า "April" — เสียงถอดเป็นข้อความบนเครื่องนี้</string>
+	<key>NSCameraUsageDescription</key>		<string>April ใช้กล้องเป็นตา — มองเมื่อคุณถามว่าเห็นอะไร หรือเฝ้าดูสิ่งที่สั่งไว้ ตรวจจับบนเครื่องนี้ ภาพไม่ถูกบันทึกลงดิสก์</string>
 	<key>NSSpeechRecognitionUsageDescription</key>	<string>April ถอดเสียงภาษาไทยบนเครื่องนี้ เพื่อรับคำสั่งเสียงและฟังคำว่า "April"</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>

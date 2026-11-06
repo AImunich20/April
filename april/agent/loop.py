@@ -24,11 +24,23 @@ from april.config import settings
 from april.llm.router import Router
 from april.memory.store import Store
 from april.observability import log
-from april.tools import builtin  # noqa: F401 — ลงทะเบียนเครื่องมือในตัว
+from april.tools import builtin, vision  # noqa: F401 — ลงทะเบียนเครื่องมือในตัว
 from april.tools.registry import ToolContext, ToolRegistry, registry as default_registry
 
 Emit = Callable[[dict], None]
 _STEP_LIMIT_NOTE = "(ระบบ) ใช้เครื่องมือครบจำนวนรอบที่กำหนดแล้ว สรุปคำตอบจากข้อมูลที่มีตอนนี้ ห้ามเรียกเครื่องมือเพิ่ม"
+
+
+_FRAME_GONE = "\n(ภาพจากกล้องตอนนั้นไม่ได้เก็บไว้ — ต้องการดูอีกให้เรียก look ใหม่)"
+
+
+def _storable(msg: dict) -> dict:
+    """ภาพจากกล้องอยู่แค่ในรอบที่ถาม — ไม่เก็บลงประวัติ (ความเป็นส่วนตัว + ไม่ส่งภาพเก่าซ้ำทุกคำถามต่อไป)"""
+    if not msg.get("camera") or not msg.get("images"):
+        return msg
+    out = {k: v for k, v in msg.items() if k not in ("images", "camera")}
+    out["content"] = (out.get("content") or "") + _FRAME_GONE
+    return out
 
 
 class Agent:
@@ -166,7 +178,7 @@ class Agent:
         if final.strip():
             final = await self._check_numbers(final, convo, new, model, emit)
 
-        self.store.add_messages(sid, new)
+        self.store.add_messages(sid, [_storable(m) for m in new])
         self._finish(state, "done" if final or not state.get("error") else "failed", error=state.get("error"),
                      answer=final, usage=usage)
         emit({"type": "done", "text": final, "model": res.model if res else None, "session_id": sid, "usage": usage})
@@ -175,14 +187,21 @@ class Agent:
         for call in calls:
             emit({"type": "tool_call", "id": call.id, "name": call.name, "arguments": call.arguments})
             log("tool_call", trace_id=run_id, name=call.name, arguments=call.arguments)
-        outcomes = await asyncio.gather(*(self.tools.call(c.name, c.arguments, ctx, settings.tool_timeout_seconds)
+        outcomes = await asyncio.gather(*(self.tools.call_full(c.name, c.arguments, ctx, settings.tool_timeout_seconds)
                                           for c in calls))
         results = []
-        for call, (ok, output) in zip(calls, outcomes):
-            emit({"type": "tool_result", "id": call.id, "name": call.name, "ok": ok, "preview": output[:300]})
+        for call, (ok, out) in zip(calls, outcomes):
+            event = {"type": "tool_result", "id": call.id, "name": call.name, "ok": ok, "preview": out.text[:300]}
+            if out.images:
+                event["images"] = len(out.images)
+            emit(event)
             if not ok:
-                log("tool_error", level="warning", trace_id=run_id, name=call.name, error=output[:300])
-            msg = {"role": "tool", "tool_call_id": call.id, "name": call.name, "content": output}
+                log("tool_error", level="warning", trace_id=run_id, name=call.name, error=out.text[:300])
+            msg = {"role": "tool", "tool_call_id": call.id, "name": call.name, "content": out.text}
+            if out.images:
+                msg["images"] = out.images
+                if out.camera:
+                    msg["camera"] = True
             if not ok:
                 msg["is_error"] = True
             results.append(msg)

@@ -4,6 +4,8 @@ april/llm/router.py
 เลือกโมเดลและสำรองอัตโนมัติ: ลองตามลำดับของ Catalog.chain() — cloud ที่ขอ/auto_order แล้วปิดท้ายด้วยโมเดลในเครื่อง
 ตัวไหนล้มก่อนส่ง token แรกถึงผู้ใช้ -> ลองตัวถัดไปในคำขอเดียวกัน (ส่ง token ไปแล้ว = คืน error เพราะผู้ใช้เห็นครึ่งคำตอบแล้ว)
 cloud ที่ล้มด้วยเหตุถาวร (คีย์ผิด/เกินโควตา/ต้องเติมเงิน) ถูกพักไว้ COOLDOWN วินาที ไม่ต้องเสียเวลาลองทุกคำขอ
+ภาพ: โมเดลที่มองภาพไม่ได้ (vision: false) และภาพจากกล้องไปโมเดล cloud ตอนปิด APRIL_VISION_CLOUD
+= ตัดภาพออกก่อนส่ง แล้วบอกในข้อความแทน (ผลตรวจจับวัตถุที่เป็นข้อความยังไปถึงโมเดลตามปกติ)
 """
 
 import asyncio
@@ -14,11 +16,29 @@ from april.llm.anthropic_provider import AnthropicProvider
 from april.llm.catalog import Catalog, ModelEntry, load_catalog
 from april.llm.ollama import OllamaProvider
 from april.llm.openai_compat import OpenAICompatProvider
+from april.config import settings
 from april.llm.types import EventSink, LLMResponse, ToolSpec
 from april.observability import log
 
 COOLDOWN = 600
 _STICKY = ("401", "402", "403", "429", "API key", "เกินโควตา", "เกินอัตรา", "เติมเครดิต")
+_NO_VISION = "\n(มีภาพแนบมา {n} ภาพ แต่โมเดลนี้มองภาพไม่ได้ — ตอบจากข้อความที่มี และบอกตรงๆ ถ้าต้องดูภาพจริง)"
+_NO_CLOUD = "\n(ภาพจากกล้องไม่ได้ส่งออกนอกเครื่องตามค่าตั้งของเจ้านาย — ใช้ผลตรวจจับที่เป็นข้อความแทน)"
+
+
+def adapt_images(entry: ModelEntry, messages: list[dict]) -> list[dict]:
+    """ตัดภาพที่ส่งให้โมเดลนี้ไม่ได้/ไม่ควร ออกจากข้อความ (คืน list ใหม่ ไม่แก้ของเดิม)"""
+    out = []
+    for m in messages:
+        images = m.get("images")
+        if images:
+            private = m.get("camera") and not entry.local and not settings.vision_cloud
+            if private or not entry.vision:
+                m = {k: v for k, v in m.items() if k != "images"}
+                m["content"] = (m.get("content") or "") + (_NO_CLOUD if private and entry.vision
+                                                           else _NO_VISION.format(n=len(images)))
+        out.append(m)
+    return out
 
 
 class Router:
@@ -77,7 +97,7 @@ class Router:
         res = LLMResponse(error="ไม่มีโมเดลที่ใช้ได้")
         for i, entry in enumerate(chain):
             started = time.monotonic()
-            res = await self.providers[entry.provider].generate(entry, messages, tools, on_event)
+            res = await self.providers[entry.provider].generate(entry, adapt_images(entry, messages), tools, on_event)
             self._record(entry, res, time.monotonic() - started)
             if res.ok or res.streamed or i == len(chain) - 1:
                 return res

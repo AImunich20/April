@@ -53,6 +53,7 @@ class ModelEntry:
     effort: str = ""
     think: bool | None = None
     options: dict = field(default_factory=dict)
+    vision: bool = True           # มองภาพได้ (false = ภาพถูกตัดออกก่อนส่ง แทนด้วยข้อความบอกว่ามีภาพ)
 
     @property
     def api_key(self) -> str:
@@ -66,7 +67,7 @@ class ModelEntry:
 
     def describe(self) -> dict:
         return {"id": self.id, "provider": self.provider, "model": self.model, "label": self.label or self.model,
-                "local": self.local, "ready": self.ready()}
+                "local": self.local, "ready": self.ready(), "vision": self.vision}
 
 
 @dataclass
@@ -96,14 +97,23 @@ class Catalog:
         return [m for m in first if not m.local] + [self.local]
 
 
+def _flag(value, default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
 def load_catalog(path: Path | None = None) -> Catalog:
     data = _expand(yaml.safe_load(Path(path or settings.models_file).read_text(encoding="utf-8")))
     loc = data["local"]
     local = ModelEntry(id=loc.get("id", "local"), provider=loc.get("provider", "ollama"), model=loc["model"],
                        label=loc.get("label", ""), local=True, think=loc.get("think"),
-                       options=loc.get("options") or {})
+                       options=loc.get("options") or {}, vision=_flag(loc.get("vision")))
     cloud = [ModelEntry(id=c["id"], provider=c["provider"], model=c.get("model") or "", label=c.get("label", ""),
                         api_key_env=c.get("api_key_env", ""), base_url=c.get("base_url", ""),
-                        effort=c.get("effort", ""), think=c.get("think"), options=c.get("options") or {})
+                        effort=c.get("effort", ""), think=c.get("think"), options=c.get("options") or {},
+                        vision=_flag(c.get("vision")))
              for c in data.get("cloud") or []]
     return Catalog(local=local, cloud=cloud, auto_order=list(data.get("auto_order") or [c.id for c in cloud]))

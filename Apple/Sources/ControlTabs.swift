@@ -647,6 +647,8 @@ struct ToolsTab: View {
         "remember": "จดความจำ", "recall": "ค้นความจำ", "forget": "ลบความจำ", "set_reminder": "ตั้งเตือน",
         "list_reminders": "ดูตัวเตือน", "cancel_reminder": "ยกเลิกเตือน", "system_status": "เช็กเครื่อง",
         "open_app": "เปิดแอป", "open_url": "เปิดเว็บ", "notify": "แจ้งเตือน",
+        "look": "กำลังมอง", "vision_events": "ดูเหตุการณ์กล้อง", "watch_for": "เริ่มเฝ้าดู", "list_watches": "ดูสิ่งที่เฝ้าดู",
+        "stop_watching": "เลิกเฝ้าดู",
     ]
 
     var body: some View {

@@ -17,6 +17,7 @@ final class AppState {
     let system: SystemModel
     let talk: TalkModel
     let wake = WakeWord()
+    let vision: VisionModel
     let hotkey = HotKey()
     let updater = Updater()
     /// openWindow ของ SwiftUI (เก็บไว้จาก RootView ตอนเปิดแอป — เปิดศูนย์ควบคุมได้แม้ปิดหน้าต่างไปแล้ว)
@@ -26,11 +27,13 @@ final class AppState {
     private init() {
         system = SystemModel(backend: backend)
         talk = TalkModel(backend: backend)
+        vision = VisionModel(backend: backend)
         let wake = self.wake, talk = self.talk
         talk.willUseMic = { wake.pause() }
         talk.onIdleMic = { wake.resume() }
         wake.onWake = { [weak self] in self?.summon() }
         hotkey.onPress = { [weak self] in self?.summon() }
+        vision.onSay = { [weak self] text in self?.announce(text) ?? false }
         // อัปเดตอัตโนมัติเฉพาะตอนที่ไม่ได้กำลังคุยกับ April (แอปต้องปิดเปิดใหม่)
         updater.canApply = { !talk.busy && !talk.convo }
     }
@@ -44,6 +47,15 @@ final class AppState {
         Task { await backend.boot() }
         Task { await updater.loop() }
         Task { await wake.start() }
+        vision.start()
+    }
+
+    /// April พูดขึ้นมาเอง (การมองเห็น: เจอสิ่งที่เฝ้าดู, แจ้งเหตุการณ์, ทักทาย) — เกาะขยายออกมาแล้วพูด
+    /// false = กำลังคุย/คิด/พูดอยู่ ไม่แทรก (VisionModel ลองใหม่ภายหลัง)
+    func announce(_ text: String) -> Bool {
+        guard backend.phase == .ready, talk.canAnnounce else { return false }
+        Island.show(self)
+        return talk.announce(text)
     }
 
     /// เรียก April แบบ Siri
@@ -122,7 +134,8 @@ struct AprilApp: App {
         MenuBarExtra {
             MenuBarContent().environment(app)
         } label: {
-            Image(systemName: app.wake.listening ? "waveform.circle.fill" : "circle.hexagongrid.circle")
+            Image(systemName: app.vision.running ? "eye.circle.fill"
+                  : app.wake.listening ? "waveform.circle.fill" : "circle.hexagongrid.circle")
         }
     }
 }
@@ -135,6 +148,10 @@ struct MenuBarContent: View {
         Button("เรียก April  \(app.hotkey.choice.label)") { app.summon() }
         Button("ศูนย์ควบคุม") { app.openControlCenter() }
         Toggle("เรียกด้วยเสียง \"April\"", isOn: Binding(get: { app.wake.enabled }, set: { app.wake.enabled = $0 }))
+        Picker("การมองเห็น", selection: Binding(get: { app.vision.mode }, set: { app.vision.mode = $0 })) {
+            ForEach(VisionMode.allCases) { Text($0.label).tag($0) }
+        }
+        if app.vision.running { Text("กล้องเปิดอยู่") }
         if let n = app.updater.newest {
             Button("อัปเดตเป็น April \(n.version)") { Task { await app.updater.install(n) } }
         }

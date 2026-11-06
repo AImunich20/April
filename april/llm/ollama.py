@@ -13,7 +13,7 @@ import httpx
 
 from april.config import settings
 from april.llm.catalog import ModelEntry
-from april.llm.types import EventSink, LLMResponse, ToolCall, ToolSpec
+from april.llm.types import TOOL_IMAGE_NOTE, EventSink, LLMResponse, ToolCall, ToolSpec
 
 CLOUD_URL = "https://ollama.com"
 _HINTS = {401: "API key ไม่ถูกต้อง/ไม่ได้ตั้ง", 402: "โมเดลนี้ต้องเติมเครดิต", 403: "ไม่มีสิทธิ์ใช้โมเดลนี้",
@@ -21,11 +21,20 @@ _HINTS = {401: "API key ไม่ถูกต้อง/ไม่ได้ตั�
 
 
 def to_ollama(messages: list[dict]) -> list[dict]:
+    """ภาพจากเครื่องมือส่งเป็นข้อความ user ต่อท้ายผลเครื่องมือชุดนั้น (เหมือน openai_compat)"""
     out = []
-    for m in messages:
+    tool_images: list[tuple[str, list[str]]] = []
+    for i, m in enumerate(messages):
         role = m["role"]
         if role == "tool":
             out.append({"role": "tool", "content": str(m.get("content", "")), "tool_name": m.get("name", "")})
+            if m.get("images"):
+                tool_images.append((m.get("name") or "", m["images"]))
+            last_tool = i + 1 == len(messages) or messages[i + 1]["role"] != "tool"
+            if last_tool:
+                out += [{"role": "user", "content": TOOL_IMAGE_NOTE.format(name=n), "images": imgs}
+                        for n, imgs in tool_images]
+                tool_images.clear()
         elif role == "assistant" and m.get("tool_calls"):
             out.append({"role": "assistant", "content": m.get("content") or "",
                         "tool_calls": [{"function": {"name": c["name"], "arguments": c.get("arguments") or {}}}
@@ -47,7 +56,7 @@ def _fit_context(payload: dict) -> None:
     """ประมาณ token แบบเผื่อ (~3 ตัวอักษร/token — ไทยวัดได้ ~3.9) ถ้าเกิน num_ctx ขยายเฉพาะคำขอนี้ (ปัดขึ้นทีละ 2048)"""
     options = payload.setdefault("options", {})
     current = int(options.get("num_ctx") or 0)
-    chars = sum(len(str(m.get("content") or "")) for m in payload["messages"])
+    chars = sum(len(str(m.get("content") or "")) + 4500 * len(m.get("images") or []) for m in payload["messages"])
     chars += len(json.dumps(payload.get("tools") or [], ensure_ascii=False))
     needed = chars // 3 + 2048
     if current and needed > current:

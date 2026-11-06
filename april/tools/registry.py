@@ -7,6 +7,7 @@ april/tools/registry.py
 - action=True = เครื่องมือที่ทำอะไรกับเครื่องจริง (เปิดแอป/เว็บ/แจ้งเตือน) — ปิดทั้งกลุ่มได้ด้วย APRIL_ALLOW_ACTIONS=false
 - argument จากโมเดลถูกตรวจกับ schema ก่อนรันเสมอ (Claude ใช้ eager input streaming ซึ่ง API ไม่ตรวจให้)
 - ผลลัพธ์เป็นข้อความเสมอ ล้ม = (False, "ERROR: ...") ให้โมเดลอ่านสาเหตุแล้วแก้เอง ไม่ทำให้ทั้งคำขอล้ม
+- เครื่องมือที่ได้ภาพ (เช่น look จากกล้อง) คืน ToolOutput(text, images) — ภาพถูกแนบไปกับผลเครื่องมือให้โมเดลเห็น
 """
 
 import asyncio
@@ -14,7 +15,7 @@ import collections
 import inspect
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable
 
 from april.llm.types import ToolSpec
@@ -32,6 +33,14 @@ class Tool:
 
     def spec(self) -> ToolSpec:
         return ToolSpec(self.name, self.description, self.parameters)
+
+
+@dataclass
+class ToolOutput:
+    """ผลเครื่องมือที่มีภาพ (base64 jpeg/png) — camera=True = ภาพจากกล้อง (ใช้กติกาส่งภาพกล้องให้ cloud)"""
+    text: str
+    images: list[str] = field(default_factory=list)
+    camera: bool = False
 
 
 @dataclass
@@ -100,13 +109,21 @@ class ToolRegistry:
         return [t.spec() for t in self.tools.values() if allow_actions or not t.action]
 
     async def call(self, name: str, args: dict, ctx: ToolContext, timeout: float = 30.0) -> tuple[bool, str]:
+        ok, out = await self.call_full(name, args, ctx, timeout)
+        return ok, out.text
+
+    async def call_full(self, name: str, args: dict, ctx: ToolContext, timeout: float = 30.0) -> tuple[bool, ToolOutput]:
+        """เหมือน call แต่คืน ToolOutput (มีภาพได้)"""
         started = time.monotonic()
         ok, out = await self._call(name, args, ctx, timeout)
-        self.recent.appendleft({"name": name, "arguments": args, "ok": ok, "preview": out[:200], "at": time.time(),
+        if not isinstance(out, ToolOutput):
+            out = ToolOutput(out)
+        preview = out.text[:200] + (f" [+ภาพ {len(out.images)}]" if out.images else "")
+        self.recent.appendleft({"name": name, "arguments": args, "ok": ok, "preview": preview, "at": time.time(),
                                 "seconds": round(time.monotonic() - started, 3), "session_id": ctx.session_id})
         return ok, out
 
-    async def _call(self, name: str, args: dict, ctx: ToolContext, timeout: float) -> tuple[bool, str]:
+    async def _call(self, name: str, args: dict, ctx: ToolContext, timeout: float) -> tuple[bool, str | ToolOutput]:
         tool = self.tools.get(name)
         if tool is None:
             return False, f"ERROR: ไม่มีเครื่องมือชื่อ '{name}'"
@@ -125,6 +142,8 @@ class ToolRegistry:
             return False, f"ERROR: เครื่องมือไม่ตอบภายใน {timeout:.0f} วินาที"
         except Exception as exc:  # noqa: BLE001 — ทุกข้อผิดพลาดกลายเป็นข้อความให้โมเดลอ่าน
             return False, f"ERROR: {type(exc).__name__}: {exc}"
+        if isinstance(result, ToolOutput):
+            return not result.text.startswith("ERROR"), result
         if isinstance(result, str):
             return not result.startswith("ERROR"), result
         return True, json.dumps(result, ensure_ascii=False, default=str)

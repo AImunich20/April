@@ -3,6 +3,7 @@
 #
 # auto (ค่าเริ่มต้นของ APRIL_DEFAULT_MODEL) = ใช้ cloud ตัวแรกใน auto_order ที่ตั้งค่าครบ
 # cloud ตัวไหนล่ม/ไม่มีคีย์/เกินโควตา ก่อนตอบคำแรก -> ไหลไปตัวถัดไป และสุดท้ายคือโมเดลในเครื่องเสมอ
+# vision: false = โมเดลมองภาพไม่ได้ (ค่าเริ่มต้น true) — router ตัดภาพออกก่อนส่งให้ตัวนั้น
 
 local:
   id: local
@@ -10,6 +11,7 @@ local:
   model: ${APRIL_LOCAL_MODEL:qwen3.5:4b}
   label: Qwen 3.5 4B (ในเครื่อง)
   think: false                    # true = ให้โมเดลคิดก่อนตอบ (แม่นขึ้นแต่ช้าลง)
+  vision: ${APRIL_LOCAL_VISION:true}   # qwen3.5 มองภาพได้ · เปลี่ยนเป็นโมเดลที่มองไม่ได้ ให้ตั้ง APRIL_LOCAL_VISION=false
   options:
     num_ctx: 16384
     temperature: 0.6
@@ -41,6 +43,7 @@ cloud:
     model: gpt-oss:120b
     label: gpt-oss 120B (Ollama Cloud)
     api_key_env: OLLAMA_API_KEY
+    vision: false                 # ข้อความอย่างเดียว — ภาพถูกตัดออก ได้แค่ผลตรวจจับเป็นข้อความ
 
   - id: openai
     provider: openai

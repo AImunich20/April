@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     briefing_time: str = ""               # "07:30" = สรุปประจำวันทุกเช้า (ว่าง = ปิด)
     notify_mac: bool = True               # แจ้งเตือนขึ้นจอ macOS
 
+    # การมองเห็น (กล้องของ Mac ผ่านแอป — april/vision.py)
+    vision_model: str = "local"           # โมเดลที่เฝ้าดู/สรุปเหตุการณ์เบื้องหลัง (local = ภาพไม่ออกนอกเครื่อง ไม่เสียเงิน)
+    vision_cloud: bool = True             # False = ภาพกล้องไม่ส่งให้ cloud เลย (cloud ได้แค่ผลตรวจจับเป็นข้อความ)
+    vision_alerts: bool = True            # แจ้ง + พูดเมื่อมีเหตุการณ์ (ขยับตอนไม่มีคน, สัตว์, ทักทายตอนกลับมา)
+    vision_watch_interval: float = 8.0    # ถามโมเดลเรื่องสิ่งที่สั่งให้เฝ้าดูถี่สุดทุกกี่วินาที
+    vision_alert_cooldown: float = 120.0  # เหตุการณ์ชนิดเดียวกันแจ้งซ้ำได้หลังกี่วินาที
+    vision_welcome_after: float = 600.0   # หายจากหน้ากล้องนานกว่านี้แล้วกลับมา = ทักทาย + สรุปสิ่งที่พลาด
+
     # API key (ชื่อมาตรฐาน ไม่มี prefix)
     anthropic_api_key: str = Field("", validation_alias=AliasChoices("ANTHROPIC_API_KEY", "APRIL_ANTHROPIC_API_KEY"))
     openai_api_key: str = Field("", validation_alias=AliasChoices("OPENAI_API_KEY", "APRIL_OPENAI_API_KEY"))

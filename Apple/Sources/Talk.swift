@@ -185,6 +185,20 @@ final class TalkModel: NSObject, AVSpeechSynthesizerDelegate {
         }
     }
 
+    /// ว่างพอให้ April พูดขึ้นมาเองได้ (ไม่ได้คุย คิด ฟัง หรือพูดอยู่)
+    var canAnnounce: Bool { !busy && !convo && !recording && !speakingNow }
+
+    /// April พูดขึ้นมาเอง (การมองเห็น) — เกาะต้องเปิดอยู่แล้ว (AppState.announce) · พูดจบแล้วเกาะหดกลับเอง
+    func announce(_ text: String) -> Bool {
+        guard canAnnounce else { return false }
+        turns.append(TalkTurn(me: false, text: text))
+        if turns.count > 16 { turns.removeFirst(turns.count - 16) }
+        lastActivity = .now
+        startSpeaking()
+        say(text)
+        return true
+    }
+
     func interrupt() {
         stopSpeaking()
         answerTask?.cancel()

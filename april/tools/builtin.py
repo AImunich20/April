@@ -6,6 +6,7 @@ april/tools/builtin.py
   ความจำ       remember, recall, forget
   ตัวเตือน      set_reminder, list_reminders, cancel_reminder
   เครื่อง Mac   system_status, open_app, open_url, notify          (action — ทำงานกับเครื่องจริง)
+  (การมองเห็นอยู่ที่ tools/vision.py)
 ไม่มีเครื่องมือรันคำสั่ง shell — ทุกอย่างที่ทำกับเครื่องผ่านคำสั่งที่กำหนดไว้แล้วเท่านั้น
 """
 
