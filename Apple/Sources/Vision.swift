@@ -252,6 +252,8 @@ final class VisionModel {
     var viewers = 0 { didSet { engine?.request(jpeg: false, preview: viewers > 0); reconcile() } }
     /// ปุ่ม "เปิดดูภาพสด" ในแท็บ (โหมดเมื่อต้องมอง)
     var hold = false { didSet { reconcile() } }
+    /// หน้าต่างทดสอบการมองเห็นเปิดอยู่ (VisionLab.swift) = เปิดกล้องค้างไว้ ไม่ว่าโหมดไหน
+    var testers = 0 { didSet { failedAt = nil; reconcile() } }
 
     private(set) var running = false
     private(set) var starting = false
@@ -299,6 +301,7 @@ final class VisionModel {
 
     private var shouldRun: Bool {
         if let f = failedAt, Date.now.timeIntervalSince(f) < 15 { return false }    // เพิ่งเปิดไม่สำเร็จ — ไม่ลองถี่
+        if testers > 0 { return true }
         switch mode {
         case .off: return false
         case .always: return true

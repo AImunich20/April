@@ -32,9 +32,11 @@ struct VisionTab: View {
                         KV(k: "กล้อง", v: vision.running ? "เปิดอยู่" : vision.starting ? "กำลังเปิด…" : "ปิด")
                         if vision.keepOn { KV(k: "เฝ้าดู", v: "\(Int(info.num("watching") ?? Double(info.arr("watches").count))) อย่าง — กล้องเปิดค้างไว้") }
                         if let p = vision.problem { Text(p).font(.system(size: 11.5)).foregroundStyle(Theme.warn) }
+                        Button { app.openVisionLab() } label: { Label("ทดสอบ: พิมพ์คุย + ภาพสด", systemImage: "text.bubble") }
+                            .buttonStyle(AccentButtonStyle())
                         HStack {
                             if vision.mode == .demand {
-                                Button(vision.hold ? "หยุดภาพสด" : "เปิดดูภาพสด") { vision.hold.toggle() }.buttonStyle(AccentButtonStyle())
+                                Button(vision.hold ? "หยุดภาพสด" : "เปิดดูภาพสด") { vision.hold.toggle() }.buttonStyle(QuietButtonStyle())
                             }
                             Button("สิทธิ์กล้อง…") {
                                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)

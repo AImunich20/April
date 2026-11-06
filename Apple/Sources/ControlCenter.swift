@@ -278,7 +278,10 @@ struct RootView: View {
         }
         .frame(minWidth: 900, minHeight: 620)
         .background(Theme.canvas)
-        .onAppear { app.openMain = { openWindow(id: "main") } }
+        .onAppear {
+            app.openMain = { openWindow(id: "main") }
+            app.openWindowID = { openWindow(id: $0) }
+        }
     }
 }
 

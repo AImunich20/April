@@ -18,16 +18,19 @@ final class AppState {
     let talk: TalkModel
     let wake = WakeWord()
     let vision: VisionModel
+    let lab: VisionLab
     let hotkey = HotKey()
     let updater = Updater()
     /// openWindow ของ SwiftUI (เก็บไว้จาก RootView ตอนเปิดแอป — เปิดศูนย์ควบคุมได้แม้ปิดหน้าต่างไปแล้ว)
     @ObservationIgnored var openMain: (() -> Void)?
+    @ObservationIgnored var openWindowID: ((String) -> Void)?
     private var started = false
 
     private init() {
         system = SystemModel(backend: backend)
         talk = TalkModel(backend: backend)
         vision = VisionModel(backend: backend)
+        lab = VisionLab(backend: backend, vision: vision)
         let wake = self.wake, talk = self.talk
         talk.willUseMic = { wake.pause() }
         talk.onIdleMic = { wake.resume() }
@@ -76,6 +79,13 @@ final class AppState {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// หน้าต่างทดสอบการมองเห็น: ภาพสด + พิมพ์คุย (VisionLab.swift)
+    func openVisionLab() {
+        guard let open = openWindowID else { openControlCenter(); return }
+        open("vision-lab")
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func openLogs() {
         guard let root = backend.root else { return }
         NSWorkspace.shared.open(root.appendingPathComponent("data/logs"))
@@ -116,10 +126,16 @@ struct AprilApp: App {
                 .environment(app.hotkey)
         }
         .defaultSize(width: 1060, height: 720)
+
+        Window("ทดสอบการมองเห็น", id: "vision-lab") {
+            VisionLabView().preferredColorScheme(.dark).environment(app)
+        }
+        .defaultSize(width: 1240, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("April") {
                 Button("เรียก April (\(app.hotkey.choice.label))") { app.summon() }
+                Button("ทดสอบการมองเห็น (พิมพ์คุย + ภาพสด)") { app.openVisionLab() }.keyboardShortcut("e", modifiers: [.command, .shift])
                 Divider()
                 Button("เริ่ม April ใหม่") { Task { await app.backend.restart() } }
                 if let n = app.updater.newest {
@@ -152,6 +168,7 @@ struct MenuBarContent: View {
             ForEach(VisionMode.allCases) { Text($0.label).tag($0) }
         }
         if app.vision.running { Text("กล้องเปิดอยู่") }
+        Button("ทดสอบการมองเห็น…") { app.openVisionLab() }
         if let n = app.updater.newest {
             Button("อัปเดตเป็น April \(n.version)") { Task { await app.updater.install(n) } }
         }

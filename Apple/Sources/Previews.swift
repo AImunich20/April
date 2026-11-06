@@ -70,6 +70,15 @@ func renderPreviews() {
                                  ["kind": "person_arrived", "text": "มีคนมาอยู่หน้ากล้อง", "note": "ยินดีต้อนรับกลับครับบอส", "at": Date().timeIntervalSince1970 - 600]]]
     save(SystemView().environment(app).environment(app.talk).environment(app.wake).environment(app.hotkey)
             .background(Theme.canvas), "control-center-vision", CGSize(width: 1060, height: 1180))
+
+    // หน้าต่างทดสอบการมองเห็น: ภาพสด + กรอบสีอ่อน + แชท
+    app.lab.messages = [
+        LabMessage(me: true, text: "ผมถืออะไรอยู่"),
+        LabMessage(me: false, text: "บอสถือแก้วกาแฟสีขาวอยู่ในมือขวาครับ ด้านซ้ายล่างมีแมวนอนอยู่ด้วย", tools: ["look"], snapshot: cg),
+        LabMessage(me: true, text: "บอกเมื่อผมยกมือ"),
+        LabMessage(me: false, text: "เริ่มเฝ้าดูแล้วครับ ยกมือเมื่อไหร่จะบอกทันที", tools: ["watch_for"]),
+    ]
+    save(VisionLabView().environment(app).background(Theme.canvas), "vision-lab", CGSize(width: 1240, height: 760))
     exit(0)
 }
 #endif
